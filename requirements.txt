@@ -1,7 +1,6 @@
 geopandas
 rasterio
 shapely
-scipy
 numpy
 requests
 pandas

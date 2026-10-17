@@ -119,6 +119,41 @@ def road_anchors(roads, bounds, cx, cy, spacing=220.0):
     return out
 
 
+def local_geo(g, part, cx, cy):
+    """Pans et zones annexes d'un bâtiment (pans_geo.json) restreints à `part`, en repère local."""
+    if not g:
+        return [], []
+    xr, yr = g["ref"]
+
+    def conv(polys_in):
+        polys = []
+        for ext, holes in polys_in:
+            pt = shapely.Polygon(ext).representative_point()
+            if part.buffer(0.3).contains(pt):
+                polys.append([[[round(x - cx, 1), round(y - cy, 1)] for x, y in ext],
+                              [[[round(x - cx, 1), round(y - cy, 1)] for x, y in h] for h in holes]])
+        return polys
+
+    def plane(pl):
+        a, b, c = pl
+        return [round(a, 4), round(b, 4), round(c + a * (cx - xr) + b * (cy - yr), 3)]
+
+    out = []
+    for p in g["pans"]:
+        polys = conv(p["polys"])
+        if polys:
+            out.append(dict(
+                pan=p["pan"], pl=plane(p["plane"]), zr=p["zr"], polys=polys,
+                ratio=p["ratio"], y=p["y"], az=p["az"], tilt=p["tilt"], area=p["area"], kwp=p["kwp"], kwh=p["kwh"],
+                sh=p["sh"], sb=p["sb"], sa=p["sa"], flat=p["flat"]))
+    xtra = []
+    for e in g.get("extras", []):
+        polys = conv(e["polys"])
+        if polys:
+            xtra.append(dict(pl=plane(e["plane"]), zr=e["zr"], polys=polys))
+    return out, xtra
+
+
 def rings(geom):
     return [geom] if geom.geom_type == "Polygon" else list(geom.geoms)
 
@@ -133,6 +168,7 @@ def build(res_dir, out_html=None, site_dir=".", home="../index.html"):
     cgeom = ss.fetch_commune(insee).geometry.iloc[0]
     blds = ss.fetch_buildings(cgeom)
     res = pd.read_csv(res_dir / "batiments.csv").set_index("bat_id")
+    geo = json.loads((res_dir / "pans_geo.json").read_text())
     blds["bat_id"] = blds["cleabs"] if "cleabs" in blds else blds.index
 
     minx, miny, maxx, maxy = cgeom.bounds
@@ -176,6 +212,10 @@ def build(res_dir, out_html=None, site_dir=".", home="../index.html"):
                          tilt=float(r.meilleure_pente), y=float(r.yield_kwh_kwp),
                          kwh=float(r.kwh_an_bons_pans), kw=float(r.kwp_bons_pans),
                          shade=float(r.shade_loss), sb=float(r.shade_bati), sa=float(r.shade_arbres))
+                pans, xtra = local_geo(geo.get(b["bat_id"]), poly, cx, cy)
+                if pans:
+                    d["pans"] = pans
+                    d["xtra"] = xtra
             out.append(d)
 
     pts = []

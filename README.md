@@ -4,6 +4,12 @@ Classement des toits d'une commune française selon leur potentiel photovoltaïq
 
 Site : https://cohendavfr.github.io/santeny-solaire/ (Santeny, Val-de-Marne, est déjà analysée).
 
+## Saisir une adresse
+
+La page `adresse.html` accepte n'importe quelle adresse de France métropolitaine (Base Adresse Nationale). Le calcul se fait **dans le navigateur** : le moteur Python (`solaire_core.py`, `solaire_address.py`) tourne via Pyodide (numpy + shapely), après téléchargement du bâtiment (BD TOPO), du relevé LiDAR HD et de l'orthophoto. Compter une dizaine de secondes. On obtient les pans de la toiture du bâtiment (tableau et plan 3D), l'ombrage des arbres et du bâti voisin et la production. En cliquant sur un bâtiment voisin, on peut lancer son analyse.
+
+PVGIS n'étant pas accessible depuis un navigateur (pas d'en-têtes CORS), les rendements viennent d'une grille précalculée de la France (`data/pvgis_fr.json`, pas de 0,5°, interpolée), générée par `python tools/build_pvgis_grid.py` (environ 40 minutes, à relancer rarement).
+
 ## Choisir une ville
 
 - **Sur le site** : la page d'accueil permet de chercher n'importe quelle commune de France métropolitaine. Si elle est déjà analysée, la maquette s'ouvre. Sinon, la page indique comment lancer l'analyse.
@@ -25,27 +31,30 @@ Les homonymes sont départagés avec `--dep` ou `--insee`. L'analyse seule (sans
 2. Modèle numérique de surface LiDAR HD de l'IGN (MNS, 0,5 m), téléchargé par tuiles WMS. Il contient les toits, les arbres et le bâti voisin.
 3. Pente, orientation et position de chaque pan de toit, calculées sur le MNS.
 4. Rendement (kWh/kWc/an) interpolé sur une grille PVGIS (inclinaison x azimut, pertes système 14 % par défaut, option `--loss`).
-5. **Ombrage par pan** :
+5. **Pans de toiture** : les pixels du toit sont regroupés par orientation (classes de 20°), séparés en morceaux connexes, puis découpés en facettes planes (plan ajusté par moindres carrés, écart toléré 0,35 m). Chaque pan reçoit un polygone, un plan 3D, une pente et une orientation (celles du plan). Les pans sont ensuite étendus à toute l'emprise du bâtiment pour la maquette.
+6. **Ombrage par pan** :
    - profil d'horizon complet (72 azimuts, jusqu'à 150 m) depuis le centre du pan, séparant le bâti (BD TOPO, opaque) du reste (arbres) ;
    - course du soleil sur 12 jours types, toutes les 15 minutes, pondérée par le rayonnement direct mensuel PVGIS (ciel clair recalé) ;
    - les arbres laissent passer une partie du soleil, davantage hors feuillage (55 % de novembre à mars, 15 % de mai à septembre) ;
    - le rayonnement diffus (part mensuelle PVGIS) est réduit selon la part de ciel masquée.
-6. Production : surface équipable (60 % d'un pan, 45 % d'un toit plat) à 5 m² par kWc. Seuls les pans à 85 % ou plus du rendement optimal comptent dans la production potentielle.
+7. Production : surface équipable (60 % d'un pan, 45 % d'un toit plat) à 5 m² par kWc. Seuls les pans à 85 % ou plus du rendement optimal comptent dans la production potentielle.
 
 ## Sorties de l'analyse (`resultats/<INSEE>/`)
 
 - `pans.csv` : un pan de toit par ligne (azimut, pente, surface, ombrage bâti / arbres, rendement, production).
+- `pans_geo.json` : géométrie des pans (polygones et plans 3D), utilisée par la maquette.
 - `batiments.csv` : classement par bâtiment.
 - `batiments.gpkg` : couche à ouvrir dans QGIS.
 - `meta.json` : synthèse de la commune.
 
 ## Maquette 3D
 
-`viewer3d.py` écrit `communes/<INSEE>.html` : page autonome (three.js) avec bâtiments extrudés sur l'orthophoto IGN, noms de rues, adresses (Base Adresse Nationale), recherche d'adresse, couleur selon le rendement ou la production, fiche par bâtiment, navigation adaptée au pavé tactile. `site_index.py` régénère `index.html`.
+`viewer3d.py` écrit `communes/<INSEE>.html` : page (three.js, `assets/viewer.js`) avec bâtiments en 3D, toitures détaillées pan par pan, sur l'orthophoto IGN, noms de rues, adresses (Base Adresse Nationale), recherche d'adresse, couleur selon le rendement ou la production, fiche par bâtiment, navigation adaptée au pavé tactile. `site_index.py` régénère `index.html`.
 
 ## Test
 
-`python tests/test_synth.py` valide pente, orientation et ombrage (arbre contre bâti) sur un toit synthétique, sans réseau (les données climatiques utilisées sont des valeurs de repli).
+- `python tests/test_core.py` : pans, plans 3D, couverture de l'emprise, ombrage (arbre contre bâti), toit plat, projection Lambert-93, sur une scène synthétique, sans réseau.
+- `python tests/test_address.py` : analyse d'une adresse de bout en bout (réseau requis, nécessite `cache/94070/` ou une grille de rendement).
 
 ## Limites
 

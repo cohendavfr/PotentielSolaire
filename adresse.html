@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Potentiel solaire d'une adresse</title>
+<link rel="stylesheet" href="assets/viewer.css">
+<style>
+  #abar{top:16px;left:340px;right:16px;max-width:560px;padding:10px 12px;z-index:9}
+  #abar input{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:9px;background:var(--bg);color:var(--ink);font:inherit}
+  #asugg{display:none;margin-top:6px;border:1px solid var(--line);border-radius:9px;overflow:hidden;background:var(--panel)}
+  #asugg div{padding:8px 12px;cursor:pointer} #asugg div:hover,#asugg div.on{background:rgba(127,127,127,.18)}
+  #asugg small{color:var(--mute);margin-left:6px}
+  #landing{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;padding:100px 16px 16px;z-index:4;background:var(--bg)}
+  #landing .box{max-width:620px}
+  #landing h1{font-size:28px;margin:0 0 8px}
+  #landing p{color:var(--mute);margin:6px 0}
+  #landing a{color:var(--acc)}
+  .ex{display:inline-block;margin:4px 6px 0 0;padding:5px 10px;border:1px solid var(--line);border-radius:99px;cursor:pointer;color:var(--ink);background:var(--panel);font-size:13px}
+  .ex:hover{border-color:var(--acc)}
+  #progress{left:50%;top:50%;transform:translate(-50%,-50%);z-index:12;min-width:340px;display:none}
+  #progress h2{font-size:15px;margin:0 0 10px}
+  #progress li{list-style:none;margin:5px 0;color:var(--mute)} #progress li.ok{color:var(--ink)} #progress li.cur{color:var(--ink);font-weight:600}
+  #progress ul{padding:0;margin:0}
+  #err{color:#c0392b;margin-top:10px;display:none}
+  @media(max-width:760px){#abar{left:16px;max-width:none}#side{top:84px!important}}
+</style>
+</head>
+<body>
+<div class="panel" id="abar">
+  <input id="aq" type="search" placeholder="Saisir une adresse en France (ex. 10 rue du Clos Santenois, Santeny)…" autocomplete="off">
+  <div id="asugg"></div>
+</div>
+
+<div id="landing"><div class="box">
+  <h1>Potentiel solaire d'une adresse</h1>
+  <p>Saisissez n'importe quelle adresse de France métropolitaine : le calcul identifie le bâtiment, relève sa toiture sur le LiDAR HD de l'IGN, distingue chaque <b>pan de toit</b> (orientation, pente, surface) et estime l'ombrage des arbres et des bâtiments voisins ainsi que la production.</p>
+  <p>Tout se calcule dans votre navigateur, à partir de données ouvertes. Le premier calcul charge le moteur (quelques secondes), les suivants sont plus rapides.</p>
+  <p>Essayez : <span class="ex" data-q="10 rue du Clos Santenois, Santeny">Santeny</span><span class="ex" data-q="1 rue de la Paix, Paris">Paris</span><span class="ex" data-q="10 rue de la République, Lyon">Lyon</span><span class="ex" data-q="1 quai du Port, Marseille">Marseille</span></p>
+  <p style="margin-top:14px"><a href="index.html">← Voir les villes déjà analysées</a></p>
+</div></div>
+
+<div class="panel" id="progress"><h2 id="ptitle">Analyse en cours…</h2><ul id="steps"></ul><div id="err"></div></div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script src="assets/viewer.js"></script>
+<script src="https://cdn.jsdelivr.net/pyodide/v0.27.7/full/pyodide.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
+const WFS = 'https://data.geopf.fr/wfs/ows', WMS = 'https://data.geopf.fr/wms-r/wms';
+const LIDAR = 'IGNF_LIDAR-HD_MNS_ELEVATION.ELEVATIONGRIDCOVERAGE.LAMB93';
+
+// ------------------------------------------------------------ recherche d'adresse (BAN)
+let hits = [], cur = -1, timer;
+$('aq').addEventListener('input', () => {
+  clearTimeout(timer);
+  const v = $('aq').value.trim();
+  if (v.length < 3) { $('asugg').style.display = 'none'; return; }
+  timer = setTimeout(async () => {
+    try {
+      const r = await fetch('https://api-adresse.data.gouv.fr/search/?limit=7&autocomplete=1&q=' + encodeURIComponent(v));
+      hits = (await r.json()).features || [];
+      $('asugg').innerHTML = hits.map((f, i) => `<div data-i="${i}">${esc(f.properties.label)}<small>${esc(f.properties.context || '')}</small></div>`).join('') || '<div>Aucune adresse</div>';
+      $('asugg').style.display = 'block'; cur = -1;
+    } catch (e) { $('asugg').style.display = 'none'; }
+  }, 200);
+});
+$('aq').addEventListener('keydown', e => {
+  const items = [...$('asugg').children];
+  if (e.key === 'ArrowDown') cur = Math.min(cur + 1, items.length - 1);
+  else if (e.key === 'ArrowUp') cur = Math.max(cur - 1, 0);
+  else if (e.key === 'Enter') { if (hits.length) choose(hits[Math.max(cur, 0)]); return; }
+  else if (e.key === 'Escape') { $('asugg').style.display = 'none'; return; } else return;
+  items.forEach((c, i) => c.classList.toggle('on', i === cur)); e.preventDefault();
+});
+$('asugg').addEventListener('click', e => { const d = e.target.closest('[data-i]'); if (d) choose(hits[+d.dataset.i]); });
+document.querySelectorAll('.ex').forEach(el => el.addEventListener('click', () => { $('aq').value = el.dataset.q; $('aq').dispatchEvent(new Event('input')); $('aq').focus(); }));
+
+function choose(f) {
+  const [lon, lat] = f.geometry.coordinates;
+  if (!inFrance(lon, lat)) { alert("Cette page couvre la France métropolitaine (LiDAR HD et BD TOPO de l'IGN)."); return; }
+  location.search = '?' + new URLSearchParams({lon: lon.toFixed(6), lat: lat.toFixed(6), label: f.properties.label});
+}
+
+// ------------------------------------------------------------ moteur de calcul (Pyodide)
+const STEPS = ['Chargement du moteur de calcul', 'Recherche du bâtiment', 'Relevé LiDAR de la toiture et du voisinage', 'Calcul des pans et de l\'ombrage', 'Construction de la maquette 3D'];
+function steps(n, msg) {
+  $('steps').innerHTML = STEPS.map((s, i) => `<li class="${i < n ? 'ok' : i === n ? 'cur' : ''}">${i < n ? '✓' : i === n ? '…' : '·'} ${esc(i === n && msg ? msg : s)}</li>`).join('');
+}
+function fail(msg) {
+  $('ptitle').textContent = 'Analyse impossible';
+  $('err').style.display = 'block'; $('err').innerHTML = esc(msg) + '<br><br><a href="adresse.html" style="color:var(--acc)">Essayer une autre adresse</a>';
+}
+let engine = null;
+async function loadEngine() {
+  if (engine) return engine;
+  const py = await loadPyodide({indexURL: 'https://cdn.jsdelivr.net/pyodide/v0.27.7/full/'});
+  await py.loadPackage(['numpy', 'shapely']);
+  for (const f of ['solaire_core.py', 'solaire_address.py']) {
+    const r = await fetch(f, {cache: 'no-cache'}); if (!r.ok) throw new Error('Fichier introuvable : ' + f);
+    py.FS.writeFile('/home/pyodide/' + f, await r.text());
+  }
+  py.runPython('import sys; sys.path.insert(0, "/home/pyodide")');
+  engine = py.pyimport('solaire_address');
+  return engine;
+}
+async function getRetry(url, kind) {
+  let last;
+  for (let k = 0; k < 6; k++) {
+    try {
+      const r = await fetch(url);
+      const ct = r.headers.get('content-type') || '';
+      if (r.ok && (kind === 'json' || /image|octet/.test(ct))) return r;
+      if (r.ok || r.status === 400) {   // le service IGN répond parfois « couche inconnue » : on relance ; toute autre erreur est définitive
+        const txt = await r.text();
+        if (!/LayerNotDefined/.test(txt)) { const e = new Error('Service IGN : ' + txt.replace(/<[^>]+>/g, ' ').trim().slice(0, 160)); e.final = true; throw e; }
+        last = new Error('couche momentanément indisponible');
+      } else last = new Error('HTTP ' + r.status);
+    } catch (e) { if (e.final) throw e; last = e; }
+    await new Promise(res => setTimeout(res, 1500 * (k + 1)));
+  }
+  throw last;
+}
+const inFrance = (lon, lat) => lat > 41.2 && lat < 51.3 && lon > -5.5 && lon < 9.8;
+const tick = () => new Promise(r => setTimeout(r, 30));
+
+async function run(lon, lat, label, preferId) {
+  $('landing').style.display = 'none'; $('progress').style.display = 'block'; $('aq').value = label || '';
+  try {
+    if (!inFrance(lon, lat)) return fail("Cette page couvre la France métropolitaine (LiDAR HD et BD TOPO de l'IGN).");
+    steps(0); await tick();
+    const sa = await loadEngine();
+    steps(1); await tick();
+    const loc = JSON.parse(sa.locate_bbox(lon, lat));
+    const wfsUrl = WFS + '?' + new URLSearchParams({SERVICE: 'WFS', VERSION: '2.0.0', REQUEST: 'GetFeature', TYPENAMES: 'BDTOPO_V3:batiment',
+      OUTPUTFORMAT: 'application/json', SRSNAME: 'EPSG:2154', COUNT: '3000', BBOX: loc.bbox.join(',') + ',EPSG:2154'});
+    const gj = await (await getRetry(wfsUrl, 'json')).text();
+    const t = JSON.parse(sa.pick_target(lon, lat, gj, preferId || null));
+    if (t.error) return fail(t.error);
+    steps(2); await tick();
+    const [x0, y0, x1, y1] = t.bbox;
+    const bilUrl = WMS + '?' + new URLSearchParams({SERVICE: 'WMS', VERSION: '1.3.0', REQUEST: 'GetMap', LAYERS: LIDAR, STYLES: '', CRS: 'EPSG:2154',
+      BBOX: t.bbox.join(','), WIDTH: t.width, HEIGHT: t.height, FORMAT: 'image/x-bil;bits=32'});
+    const k = Math.min(1, 2600 / Math.max(x1 - x0, y1 - y0) / 3);   // pixels par mètre pour l'orthophoto
+    const orthoUrl = WMS + '?' + new URLSearchParams({SERVICE: 'WMS', VERSION: '1.3.0', REQUEST: 'GetMap', LAYERS: 'ORTHOIMAGERY.ORTHOPHOTOS', STYLES: '', CRS: 'EPSG:2154',
+      BBOX: t.bbox.join(','), WIDTH: Math.round((x1 - x0) * Math.min(3, 2600 / Math.max(x1 - x0, y1 - y0))), HEIGHT: Math.round((y1 - y0) * Math.min(3, 2600 / Math.max(x1 - x0, y1 - y0))), FORMAT: 'image/jpeg'});
+    const [bilBuf, orthoBlob, grid] = await Promise.all([
+      getRetry(bilUrl, 'bin').then(r => r.arrayBuffer()),
+      getRetry(orthoUrl, 'bin').then(r => r.blob()).catch(() => null),
+      fetch('data/pvgis_fr.json').then(r => { if (!r.ok) throw new Error('grille PVGIS introuvable'); return r.text(); })]);
+    if (bilBuf.byteLength !== t.width * t.height * 4) return fail("Le LiDAR HD de l'IGN ne couvre pas (encore) cette zone.");
+    steps(3); await tick();
+    const res = JSON.parse(sa.analyze(lon, lat, preferId ? label + ' — bâtiment voisin' : label, gj, new Uint8Array(bilBuf), JSON.stringify(t.bbox), t.width, t.height, grid, preferId || null));
+    if (res.error) return fail(res.error);
+    steps(4); await tick();
+    $('progress').style.display = 'none';
+    history.replaceState(null, '', '?' + new URLSearchParams({lon: lon.toFixed(6), lat: lat.toFixed(6), label, ...(preferId ? {bid: preferId} : {})}));
+    window.V = startViewer({
+      data: res, ortho: orthoBlob ? URL.createObjectURL(orthoBlob) : null, title: label, mode: 'address', focus: res.focus,
+      home: 'index.html', homeLabel: '← Toits solaires',
+      subtitle: `Rendement optimal ${res.meta.rendement_optimal} kWh/kWc/an à cet endroit (PVGIS), part de diffus ${Math.round(res.meta.diffus * 100)} %. Estimation indicative.`,
+      onAnalyse: id => { location.search = '?' + new URLSearchParams({lon, lat, label, bid: id}); },
+    });
+  } catch (e) {
+    console.error(e);
+    fail('Une étape a échoué : ' + (e.message || e) + '. Réessayez dans un instant (les services de l\'IGN sont parfois instables).');
+  }
+}
+
+// ------------------------------------------------------------ démarrage
+(async () => {
+  const q = new URLSearchParams(location.search);
+  if (q.get('lon') && q.get('lat')) return run(+q.get('lon'), +q.get('lat'), q.get('label') || '', q.get('bid'));
+  if (q.get('q')) {
+    const r = await fetch('https://api-adresse.data.gouv.fr/search/?limit=1&q=' + encodeURIComponent(q.get('q')));
+    const f = ((await r.json()).features || [])[0];
+    if (f) return choose(f);
+  }
+})();
+</script>
+</body>
+</html>

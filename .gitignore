@@ -5,3 +5,5 @@ __pycache__/
 *.gpkg
 .venv/
 run.log
+data/pvgis_fr.partial.json
+time.log
