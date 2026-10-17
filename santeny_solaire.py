@@ -5,7 +5,7 @@ Classement des toits de Santeny (94069) pour le photovoltaïque.
 Principe
   1. Contour de la commune (geo.api.gouv.fr) et bâtiments (BD TOPO, WFS Géoplateforme IGN).
   2. Modèle numérique de surface LiDAR HD (MNS) : soit un GeoTIFF local (--mns, recommandé),
-     soit un téléchargement par tuiles via le WCS de la Géoplateforme.
+     soit un téléchargement par tuiles via le WMS de la Géoplateforme.
   3. Par bâtiment : pente et orientation de chaque pan de toit calculées sur le MNS.
   4. Rendement (kWh/kWc/an) interpolé sur une grille de calculs PVGIS (cachée sur disque).
   5. Perte par ombrage lointain estimée depuis le MNS (indicatif, secteur sud).
@@ -42,9 +42,9 @@ from scipy.interpolate import RegularGridInterpolator
 INSEE = "94069"  # Santeny
 CRS = "EPSG:2154"  # Lambert-93
 WFS_URL = "https://data.geopf.fr/wfs/ows"
-WCS_URL = "https://data.geopf.fr/wcs/ows"
-# À vérifier dans le GetCapabilities du WCS si le téléchargement échoue
-MNS_COVERAGE = "IGNF_LIDAR-HD_MNS_ELEVATION.ELEVATIONGRIDCOVERAGE.LAMB93"
+WMS_URL = "https://data.geopf.fr/wms-r/wms"
+MNS_LAYER = "IGNF_LIDAR-HD_MNS_ELEVATION.ELEVATIONGRIDCOVERAGE.LAMB93"
+MNS_RES = 0.5  # résolution demandée (m)
 PVGIS_URL = "https://re.jrc.ec.europa.eu/api/v5_3/PVcalc"
 
 FLAT_SLOPE = 8.0       # en dessous : toit considéré plat (°)
@@ -98,7 +98,7 @@ def fetch_buildings(commune_geom):
 
 
 def download_mns(bounds, cache, tile=1000):
-    """Télécharge le MNS LiDAR HD par tuiles via le WCS, puis les assemble."""
+    """Télécharge le MNS LiDAR HD par tuiles via le WMS, puis les assemble."""
     cache.mkdir(parents=True, exist_ok=True)
     out = cache / "mns.tif"
     if out.exists():
@@ -110,16 +110,16 @@ def download_mns(bounds, cache, tile=1000):
             x1, y1 = min(x0 + tile, maxx), min(y0 + tile, maxy)
             f = cache / f"tuile_{x0}_{y0}.tif"
             if not f.exists():
-                params = [
-                    ("SERVICE", "WCS"), ("VERSION", "2.0.1"), ("REQUEST", "GetCoverage"),
-                    ("COVERAGEID", MNS_COVERAGE), ("FORMAT", "image/tiff"),
-                    ("SUBSET", f"x({x0},{x1})"), ("SUBSET", f"y({y0},{y1})"),
-                    ("SUBSETTINGCRS", CRS), ("OUTPUTCRS", CRS),
-                ]
-                r = requests.get(WCS_URL, params=params, timeout=300)
-                if r.status_code != 200 or "tiff" not in r.headers.get("content-type", "").lower():
+                px = int((x1 - x0) / MNS_RES)
+                params = dict(
+                    SERVICE="WMS", VERSION="1.3.0", REQUEST="GetMap", LAYERS=MNS_LAYER,
+                    STYLES="", CRS=CRS, BBOX=f"{x0},{y0},{x1},{y1}",
+                    WIDTH=px, HEIGHT=int((y1 - y0) / MNS_RES), FORMAT="image/geotiff",
+                )
+                r = requests.get(WMS_URL, params=params, timeout=300)
+                if r.status_code != 200 or "tif" not in r.headers.get("content-type", "").lower():
                     raise RuntimeError(
-                        "Échec du téléchargement WCS du MNS "
+                        "Échec du téléchargement WMS du MNS "
                         f"({r.status_code}) : {r.text[:300]}\n"
                         "Télécharge plutôt les dalles MNS LiDAR HD sur geoservices.ign.fr/lidarhd "
                         "et passe le GeoTIFF avec --mns."
@@ -294,7 +294,7 @@ def analyze_building(geom, src, interp, ymax, shade=True):
 # --------------------------------------------------------------------------- programme
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
-    ap.add_argument("--mns", help="GeoTIFF du MNS LiDAR HD (Lambert-93). Sinon téléchargement WCS.")
+    ap.add_argument("--mns", help="GeoTIFF du MNS LiDAR HD (Lambert-93). Sinon téléchargement WMS.")
     ap.add_argument("--out", default="resultats")
     ap.add_argument("--cache", default="cache")
     ap.add_argument("--all-usages", action="store_true", help="inclut tous les usages de bâtiment")

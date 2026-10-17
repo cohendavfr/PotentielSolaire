@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Santeny solaire 3D</title>
+<style>
+  :root{--bg:#f4f1ea;--panel:#fffdf8;--ink:#1d2a2f;--mute:#6b7478;--line:#ddd6c6;--acc:#d9822b}
+  @media (prefers-color-scheme:dark){:root{--bg:#14191b;--panel:#1d2427;--ink:#e8e6df;--mute:#97a0a3;--line:#323c40;--acc:#f0a050}}
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font:14px/1.4 system-ui,-apple-system,Segoe UI,sans-serif;overflow:hidden}
+  #c{position:fixed;inset:0;display:block}
+  .panel{position:fixed;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 16px;box-shadow:0 4px 18px rgba(0,0,0,.12)}
+  #side{top:16px;left:16px;width:300px;max-height:calc(100% - 32px);display:flex;flex-direction:column;gap:10px}
+  h1{font-size:17px;margin:0}
+  .sub{color:var(--mute);font-size:12px;margin:0}
+  .bar{height:10px;border-radius:5px;background:linear-gradient(90deg,#c0392b,#e8a33a,#f2d64b,#6dbb4a,#1f9d55)}
+  .scale{display:flex;justify-content:space-between;font-size:11px;color:var(--mute)}
+  label{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:13px}
+  input[type=range]{width:100%}
+  #top{overflow:auto;border-top:1px solid var(--line);padding-top:8px;min-height:60px}
+  .row{display:flex;gap:8px;align-items:center;padding:5px 4px;border-radius:6px;cursor:pointer;font-size:12px}
+  .row:hover{background:rgba(127,127,127,.15)}
+  .dot{width:10px;height:10px;border-radius:50%;flex:none}
+  .row b{font-variant-numeric:tabular-nums}
+  .row span{color:var(--mute);margin-left:auto;white-space:nowrap}
+  #info{right:16px;bottom:16px;width:260px;display:none}
+  #info h2{font-size:14px;margin:0 0 6px}
+  #info dl{margin:0;display:grid;grid-template-columns:auto 1fr;gap:3px 10px;font-size:13px}
+  #info dt{color:var(--mute)} #info dd{margin:0;text-align:right;font-variant-numeric:tabular-nums}
+  #hint{right:16px;top:16px;font-size:12px;color:var(--mute);padding:8px 12px}
+  .compass{position:fixed;right:24px;bottom:16px}
+  @media(max-width:700px){#side{width:calc(100% - 32px);max-height:42%}#hint{display:none}#info{right:16px;left:16px;width:auto;bottom:calc(42% + 28px)}}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div class="panel" id="side">
+  <div><h1>Santeny · potentiel solaire</h1>
+  <p class="sub">Toits résidentiels classés par rendement relatif (orientation, pente, ombrage). Estimation indicative.</p></div>
+  <div><div class="bar"></div><div class="scale"><span>50 %</span><span>rendement optimal</span><span>100 %</span></div></div>
+  <label>Seuil mini <input type="range" id="min" min="0" max="100" value="0" style="flex:1"><b id="minv">0 %</b></label>
+  <label><span>Bâtiments non analysés</span><input type="checkbox" id="others" checked></label>
+  <label><span>Orthophoto</span><input type="checkbox" id="photo" checked></label>
+  <div id="top"></div>
+</div>
+<div class="panel" id="hint">Clic gauche : tourner · molette : zoom · clic droit : déplacer</div>
+<div class="panel" id="info"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script>
+const DATA = __DATA__;
+const ORTHO = "data:image/jpeg;base64,__ORTHO__";
+
+const canvas = document.getElementById('c');
+const renderer = new THREE.WebGLRenderer({canvas, antialias:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+const scene = new THREE.Scene();
+const dark = matchMedia('(prefers-color-scheme:dark)').matches;
+scene.background = new THREE.Color(dark ? 0x14191b : 0xdfe6ea);
+const camera = new THREE.PerspectiveCamera(45, 1, 5, 12000);
+camera.position.set(0, 1500, 1900);
+const controls = new THREE.OrbitControls(camera, canvas);
+controls.maxPolarAngle = Math.PI * 0.48;
+controls.enableDamping = true;
+
+scene.add(new THREE.HemisphereLight(0xffffff, 0x667788, 0.75));
+const sun = new THREE.DirectionalLight(0xfff3dd, 0.9);
+sun.position.set(-600, 1200, 800);
+scene.add(sun);
+
+// sol = orthophoto IGN (nord = -z)
+const groundMat = new THREE.MeshBasicMaterial({color: 0x8a9a8a});
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(DATA.w, DATA.h), groundMat);
+ground.rotation.x = -Math.PI / 2;
+scene.add(ground);
+new THREE.TextureLoader().load(ORTHO, t => {
+  t.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  groundMat.map = t; groundMat.color.set(0xffffff); groundMat.needsUpdate = true;
+});
+
+// couleurs
+const stops = [[.5,[192,57,43]],[.7,[232,163,58]],[.82,[242,214,75]],[.92,[109,187,74]],[1,[31,157,85]]];
+function ramp(r){
+  if (r <= stops[0][0]) return new THREE.Color(...stops[0][1].map(v=>v/255));
+  for (let i = 1; i < stops.length; i++) if (r <= stops[i][0]) {
+    const [a, ca] = stops[i-1], [b, cb] = stops[i], t = (r-a)/(b-a);
+    return new THREE.Color(...ca.map((v,k)=>(v+(cb[k]-v)*t)/255));
+  }
+  return new THREE.Color(...stops[stops.length-1][1].map(v=>v/255));
+}
+const GREY = new THREE.Color(dark ? 0x56606a : 0xb9b4a8);
+const WALL = new THREE.Color(dark ? 0x8a8f94 : 0xf2eee4);
+
+const meshes = [];
+DATA.buildings.forEach((b, idx) => {
+  const shape = new THREE.Shape(b.r.map(p => new THREE.Vector2(p[0], p[1])));
+  (b.holes || []).forEach(h => shape.holes.push(new THREE.Path(h.map(p => new THREE.Vector2(p[0], p[1])))));
+  const geo = new THREE.ExtrudeGeometry(shape, {depth: b.h, bevelEnabled: false});
+  geo.rotateX(-Math.PI / 2);
+  const analysed = b.ratio !== undefined;
+  const roof = new THREE.MeshLambertMaterial({color: analysed ? ramp(b.ratio) : GREY});
+  const wall = new THREE.MeshLambertMaterial({color: WALL});
+  const m = new THREE.Mesh(geo, [roof, wall]);
+  m.userData = {b, analysed, idx};
+  scene.add(m); meshes.push(m);
+});
+
+// classement
+const ranked = meshes.filter(m => m.userData.analysed)
+  .sort((a, b) => b.userData.b.ratio - a.userData.b.ratio || b.userData.b.kwh - a.userData.b.kwh);
+ranked.forEach((m, i) => m.userData.rank = i + 1);
+const topEl = document.getElementById('top');
+function compass(az){ return ['N','NE','E','SE','S','SO','O','NO'][Math.round(((az % 360) + 360) % 360 / 45) % 8]; }
+function renderTop(){
+  const min = +document.getElementById('min').value / 100;
+  const list = ranked.filter(m => m.userData.b.ratio >= min);
+  topEl.innerHTML = `<p class="sub" style="margin-bottom:6px">${list.length} bâtiments · top 25</p>` +
+    list.slice(0, 25).map(m => {
+      const b = m.userData.b, c = '#' + ramp(b.ratio).getHexString();
+      return `<div class="row" data-i="${m.userData.idx}"><i class="dot" style="background:${c}"></i><b>#${m.userData.rank}</b>
+        <span style="margin:0;color:inherit">${Math.round(b.ratio*100)} %</span><span>${compass(b.az)} · ${Math.round(b.tilt)}° · ${Math.round(b.kwh/1000)} MWh</span></div>`;
+    }).join('');
+}
+topEl.addEventListener('click', e => {
+  const r = e.target.closest('.row'); if (!r) return;
+  select(meshes[+r.dataset.i], true);
+});
+
+// filtres
+function applyFilters(){
+  const min = +document.getElementById('min').value / 100;
+  const others = document.getElementById('others').checked;
+  document.getElementById('minv').textContent = Math.round(min * 100) + ' %';
+  meshes.forEach(m => { m.visible = m.userData.analysed ? m.userData.b.ratio >= min : others; });
+  renderTop();
+}
+['min','others'].forEach(id => document.getElementById(id).addEventListener('input', applyFilters));
+document.getElementById('photo').addEventListener('input', e => { ground.visible = e.target.checked; });
+
+// sélection
+const info = document.getElementById('info');
+let selected = null;
+function select(m, fly){
+  if (selected) selected.material[1].emissive.set(0x000000), selected.material[0].emissive.set(0x000000);
+  selected = m;
+  if (!m) { info.style.display = 'none'; return; }
+  m.material.forEach(mt => mt.emissive.set(0x333333));
+  const b = m.userData.b;
+  info.style.display = 'block';
+  info.innerHTML = m.userData.analysed
+    ? `<h2>Bâtiment #${m.userData.rank}</h2><dl>
+       <dt>Rendement relatif</dt><dd>${Math.round(b.ratio*100)} %</dd>
+       <dt>Orientation</dt><dd>${Math.round(b.az)}° (${compass(b.az)})</dd>
+       <dt>Pente</dt><dd>${Math.round(b.tilt)}°</dd>
+       <dt>Rendement</dt><dd>${Math.round(b.y)} kWh/kWc/an</dd>
+       <dt>Ombrage lointain</dt><dd>${Math.round(b.shade*100)} %</dd>
+       <dt>Production (bons pans)</dt><dd>${Math.round(b.kwh).toLocaleString('fr-FR')} kWh/an</dd>
+       <dt>Hauteur</dt><dd>${b.h} m</dd></dl>`
+    : `<h2>Bâtiment non analysé</h2><dl><dt>Hauteur</dt><dd>${b.h} m</dd></dl>`;
+  if (fly) {
+    const bb = new THREE.Box3().setFromObject(m), c = bb.getCenter(new THREE.Vector3());
+    controls.target.copy(c);
+    camera.position.set(c.x + 60, 110, c.z + 110);
+  }
+}
+
+const ray = new THREE.Raycaster(), mouse = new THREE.Vector2();
+let down = null;
+canvas.addEventListener('pointerdown', e => down = [e.clientX, e.clientY]);
+canvas.addEventListener('pointerup', e => {
+  if (!down || Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 4) return;
+  mouse.set(e.clientX / innerWidth * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
+  ray.setFromCamera(mouse, camera);
+  const hit = ray.intersectObjects(meshes.filter(m => m.visible))[0];
+  select(hit ? hit.object : null, false);
+});
+
+function resize(){
+  renderer.setSize(innerWidth, innerHeight, false);
+  camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
+}
+addEventListener('resize', resize); resize();
+// cadrage initial sur les bâtiments analysés
+(function frame(){
+  const bb = new THREE.Box3();
+  ranked.forEach(m => bb.expandByObject(m));
+  const c = bb.getCenter(new THREE.Vector3()), sz = bb.getSize(new THREE.Vector3());
+  const d = Math.max(sz.x, sz.z) * 0.9 + 200;
+  controls.target.copy(c);
+  camera.position.set(c.x + d * 0.25, d * 0.75, c.z + d * 0.85);
+})();
+applyFilters();
+(function loop(){ controls.update(); renderer.render(scene, camera); requestAnimationFrame(loop); })();
+</script>
+</body>
+</html>

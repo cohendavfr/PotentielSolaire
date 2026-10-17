@@ -4,3 +4,4 @@ __pycache__/
 *.tif
 *.gpkg
 .venv/
+run.log

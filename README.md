@@ -42,3 +42,11 @@ Si le téléchargement WCS du MNS échoue, récupérer les dalles sur https://ge
 ## Limites
 
 Estimation indicative. Le MNS ne capte pas les obstacles proches (cheminées, velux). Charpente, PLU et abords protégés sont à vérifier. Le nom de la couche BD TOPO et l'identifiant WCS peuvent évoluer côté IGN (constantes en tête de script).
+
+## Maquette 3D
+
+```
+python viewer3d.py --res resultats --out santeny_3d.html
+```
+
+Génère une page HTML autonome (three.js) : bâtiments BD TOPO extrudés sur l'orthophoto IGN, toits colorés selon le rendement relatif, filtre par seuil, classement cliquable et fiche par bâtiment. `santeny_3d.html` est déjà généré dans le dépôt.
