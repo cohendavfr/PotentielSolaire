@@ -1,6 +1,6 @@
 # santeny-solaire
 
-Classement des toits de Santeny (Val-de-Marne, INSEE 94069) selon leur potentiel photovoltaïque : orientation, pente, ombrage et production estimée.
+Classement des toits de Santeny (Val-de-Marne, INSEE 94070) selon leur potentiel photovoltaïque : orientation, pente, ombrage et production estimée.
 
 ## Principe
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Classement des toits de Santeny (94069) pour le photovoltaïque.
+Classement des toits de Santeny (94070) pour le photovoltaïque.
 
 Principe
   1. Contour de la commune (geo.api.gouv.fr) et bâtiments (BD TOPO, WFS Géoplateforme IGN).
@@ -39,7 +39,7 @@ from rasterio.merge import merge
 from scipy.interpolate import RegularGridInterpolator
 
 # --------------------------------------------------------------------------- constantes
-INSEE = "94069"  # Santeny
+INSEE = "94070"  # Santeny
 CRS = "EPSG:2154"  # Lambert-93
 WFS_URL = "https://data.geopf.fr/wfs/ows"
 WMS_URL = "https://data.geopf.fr/wms-r/wms"
