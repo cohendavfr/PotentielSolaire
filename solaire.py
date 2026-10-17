@@ -302,7 +302,7 @@ def analyse(commune, out, cache, mns=None, all_usages=False, shade=True, limit=0
     if shade:
         print(f"Part de rayonnement diffus : {(H * Kd).sum() / H.sum():.0%} (PVGIS)")
 
-    rows, geo = [], {}
+    rows, geo, errors = [], {}, 0
     sidx = allb.sindex
     pad = (HORIZON_RADIUS + 5) if shade else core.WIN_SMALL + 1
     with rasterio.open(mns) as src:
@@ -311,7 +311,12 @@ def analyse(commune, out, cache, mns=None, all_usages=False, shade=True, limit=0
             Zb, Tb = read_window(src, b.geometry, pad)
             bounds = (Tb.c, Tb.f + Tb.e * Zb.shape[0], Tb.c + Tb.a * Zb.shape[1], Tb.f)
             nearby = list(allb.geometry.iloc[sidx.query(shapely.box(*bounds))]) if shade else []
-            r = core.analyze_building(b.geometry, Zb, Tb, nearby, ym, sun, shade=shade)
+            try:
+                r = core.analyze_building(b.geometry, Zb, Tb, nearby, ym, sun, shade=shade)
+            except Exception as e:   # un bâtiment à la géométrie douteuse ne doit pas arrêter la commune
+                errors += 1
+                print(f"  bâtiment {bid} ignoré : {e}")
+                r = None
             if r:
                 geo[bid] = dict(zg=r["zg"], ref=r["ref"], extras=r["extras"], pans=[
                     dict(pan=p["pan"], plane=p["plane"], zr=p["zr"], polys=p["polys"], ratio=p["ratio"],

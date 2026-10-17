@@ -408,12 +408,25 @@ def _rings(geom):
     return out
 
 
+def valid_polygon(g):
+    """Polygone valide (les emprises BD TOPO sont parfois auto-intersectées) ; le plus grand morceau si besoin."""
+    if g.is_valid and g.geom_type == "Polygon":
+        return g
+    g = shapely.make_valid(g) if not g.is_valid else g
+    polys = [g] if g.geom_type == "Polygon" else [x for x in getattr(g, "geoms", []) if x.geom_type in ("Polygon", "MultiPolygon")]
+    flat = []
+    for x in polys:
+        flat += [x] if x.geom_type == "Polygon" else list(x.geoms)
+    return max(flat, key=lambda x: x.area) if flat else g
+
+
 def analyze_roof(geom, Zs, Ts):
     """Pans géométriques d'un bâtiment sur le MNS : [dict(...)] et altitude du sol alentour.
 
     Chaque pan : composante connexe de toit de même orientation (classes de 20°), avec surface,
     pente et azimut (plan ajusté), centre, altitude moyenne, plan 3D et polygones.
     """
+    geom = valid_polygon(geom)
     res = abs(Ts.a)
     ref = geom.representative_point()
     xr, yr = ref.x, ref.y
@@ -489,7 +502,10 @@ def analyze_roof(geom, Zs, Ts):
         geo = _pixel_polys(full == i, Ts, res)
         polys = []
         if geo is not None:
-            g2 = geo.intersection(geom).simplify(0.35)
+            try:
+                g2 = geo.intersection(geom).simplify(0.35)
+            except Exception:
+                g2 = shapely.make_valid(geo).buffer(0).intersection(shapely.make_valid(geom)).simplify(0.35)
             polys = _rings(g2)
         if not polys:
             continue
@@ -520,7 +536,10 @@ def analyze_roof(geom, Zs, Ts):
         else:
             continue
         geo = _pixel_polys(m, Ts, res)
-        polys = _rings(geo.intersection(geom).simplify(0.35)) if geo is not None else []
+        try:
+            polys = _rings(geo.intersection(geom).simplify(0.35)) if geo is not None else []
+        except Exception:
+            polys = []
         if polys:
             extras.append(dict(plane=(round(a, 4), round(b, 4), round(c - zg, 3)), polys=polys, zr=(0.0, zcap)))
     return pans, zg, (xr, yr), extras
@@ -532,6 +551,8 @@ def analyze_building(geom, Zb, Tb, nearby, yield_model, sun=None, shade=True):
     Zb, Tb : MNS autour du bâtiment, d'au moins HORIZON_RADIUS + 5 m si l'ombrage est demandé.
     nearby : géométries des bâtiments voisins (obstacles « bâti »). Renvoie dict ou None.
     """
+    geom = valid_polygon(geom)
+    nearby = [valid_polygon(g) for g in nearby]
     Zs, Ts = crop_window(Zb, Tb, geom.buffer(WIN_SMALL).bounds)
     pans, zg, ref, extras = analyze_roof(geom, Zs, Ts)
     if not pans:

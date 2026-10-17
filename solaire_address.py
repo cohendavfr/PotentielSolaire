@@ -32,7 +32,13 @@ def locate_bbox(lon, lat):
 
 def _polys(feature):
     g = shapely.force_2d(shape(feature["geometry"]))
-    return [g] if g.geom_type == "Polygon" else list(g.geoms)
+    if not g.is_valid:
+        g = shapely.make_valid(g)
+    parts = [g] if g.geom_type == "Polygon" else list(getattr(g, "geoms", []))
+    out = []
+    for p in parts:
+        out += [p] if p.geom_type == "Polygon" else [q for q in getattr(p, "geoms", []) if q.geom_type == "Polygon"]
+    return out
 
 
 def pick_target(lon, lat, geojson_text, prefer_id=None):
@@ -79,17 +85,14 @@ def analyze(lon, lat, label, geojson_text, bil_bytes, bbox, width, height, grid_
     for f in feats:
         for p in _polys(f):
             items.append((f, p))
-    target = None
+    cands = []
     for f, p in items:
         if p.area < 8:
             continue
         d = 0.0 if p.contains(pt) else p.distance(pt)
         want = bool(prefer_id) and f.get("properties", {}).get("cleabs") == prefer_id
-        key = (not want, round(d, 1), -p.area)
-        if target is None or key < target[0]:
-            target = (key, f, p)
-    _, tf, tgeom = target
-    tprops = tf.get("properties", {})
+        cands.append(((not want, round(d, 1), -p.area), f, p))
+    cands.sort(key=lambda c: c[0])
 
     minx, miny, maxx, maxy = bbox
     Z = np.frombuffer(bytes(bil_bytes), dtype="<f4").reshape(height, width).astype(float)
@@ -101,10 +104,22 @@ def analyze(lon, lat, label, geojson_text, bil_bytes, bbox, width, height, grid_
     grid = json.loads(grid_text)
     ym, H, Kd = core.france_model(grid, lat, lon)
     sun = core.make_sun_context(lat, lon, H, Kd)
-    nearby = [p for f, p in items if p is not tgeom]
-    res = core.analyze_building(tgeom, Z, T, nearby, ym, sun, shade=True)
+    res = tgeom = tf = None
+    for rank, (_, f, p) in enumerate(cands[:6]):    # le bâtiment visé, sinon les plus proches
+        if rank and p.area < 25:
+            continue
+        try:
+            r = core.analyze_building(p, Z, T, [q for _, _, q in cands if q is not p], ym, sun, shade=True)
+        except Exception:
+            r = None
+        if r:
+            res, tgeom, tf = r, p, f
+            if rank:
+                label = label + " (bâtiment analysable le plus proche)"
+            break
     if not res:
         return json.dumps(dict(error="Toit non analysable : surface trop petite ou mesures LiDAR insuffisantes."))
+    tprops = tf.get("properties", {})
 
     cx, cy = (minx + maxx) / 2, (miny + maxy) / 2   # origine locale = centre de l'emprise
     xr, yr = res["ref"]
