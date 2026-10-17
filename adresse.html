@@ -103,7 +103,8 @@ async function loadEngine() {
     py.FS.writeFile('/home/pyodide/' + f, await r.text());
   }
   py.runPython('import sys; sys.path.insert(0, "/home/pyodide")');
-  engine = py.pyimport('solaire_address');
+  window.PY = py;
+  engine = py.pyimport("solaire_address");
   return engine;
 }
 async function getRetry(url, kind) {

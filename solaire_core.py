@@ -282,6 +282,21 @@ def _shift(a, dr, dc, fill):
     return out
 
 
+def dilate(mask, n):
+    """Dilatation d'un masque de n pixels (voisinage carré) — sans GEOS : certaines opérations
+    buffer() de GEOS plantent définitivement le runtime Pyodide sur des emprises dégénérées."""
+    for _ in range(n):
+        out = mask.copy()
+        for dr, dc in _SHIFTS:
+            out |= _shift(mask, dr, dc, False)
+        mask = out
+    return mask
+
+
+def erode(mask, n):
+    return ~dilate(~mask, n)
+
+
 def label8(mask):
     """Composantes connexes (8 voisins) : tableau d'entiers (-1 = fond) et nombre de composantes."""
     lab = np.where(mask, np.arange(mask.size).reshape(mask.shape), -1)
@@ -430,14 +445,12 @@ def analyze_roof(geom, Zs, Ts):
     res = abs(Ts.a)
     ref = geom.representative_point()
     xr, yr = ref.x, ref.y
-    roof = geom.buffer(-ERODE)
-    if roof.is_empty:
-        return [], None, (xr, yr), []
-    mask = rasterize([roof], Zs.shape, Ts)
+    fp0 = rasterize([geom], Zs.shape, Ts)
+    mask = erode(fp0, max(1, round(ERODE / res)))     # recul du pourtour (murs, débords)
     if mask.sum() < 10 or np.isfinite(Zs[mask]).mean() < 0.7:
         return [], None, (xr, yr), []
     # altitude du sol : bas de la couronne autour du bâtiment, hors bâtiment
-    ring = rasterize([geom.buffer(WIN_SMALL - 1.5).difference(geom.buffer(1.0))], Zs.shape, Ts)
+    ring = dilate(fp0, round((WIN_SMALL - 1.5) / res)) & ~dilate(fp0, round(1.0 / res))
     zr = Zs[ring & np.isfinite(Zs)]
     zg = float(np.percentile(zr, 10)) if len(zr) > 20 else float(np.nanmin(Zs[mask]) - 3.0)
 
@@ -478,7 +491,7 @@ def analyze_roof(geom, Zs, Ts):
     seeds = np.full(Zs.shape, -1)
     for i, (m, _) in enumerate(cand):
         seeds[m] = i
-    footprint = rasterize([geom.buffer(0.4)], Zs.shape, Ts)   # un peu plus large : le découpage final se fait sur l'emprise exacte
+    footprint = dilate(fp0, 1)   # un peu plus large : le découpage final se fait sur l'emprise exacte
     full = nearest_fill(seeds, footprint, max_iter=8)   # au plus 4 m autour des pixels retenus
     zcap = round(float(max(np.nanmax(Zs[m]) for m, _ in cand)) - zg + 1.0, 2)   # plafond : le plus haut point du toit + 1 m
     pans = []
@@ -505,7 +518,7 @@ def analyze_roof(geom, Zs, Ts):
             try:
                 g2 = geo.intersection(geom).simplify(0.35)
             except Exception:
-                g2 = shapely.make_valid(geo).buffer(0).intersection(shapely.make_valid(geom)).simplify(0.35)
+                g2 = shapely.make_valid(geo).intersection(shapely.make_valid(geom)).simplify(0.35)
             polys = _rings(g2)
         if not polys:
             continue
@@ -553,13 +566,15 @@ def analyze_building(geom, Zb, Tb, nearby, yield_model, sun=None, shade=True):
     """
     geom = valid_polygon(geom)
     nearby = [valid_polygon(g) for g in nearby]
-    Zs, Ts = crop_window(Zb, Tb, geom.buffer(WIN_SMALL).bounds)
+    gx0, gy0, gx1, gy1 = geom.bounds
+    Zs, Ts = crop_window(Zb, Tb, (gx0 - WIN_SMALL, gy0 - WIN_SMALL, gx1 + WIN_SMALL, gy1 + WIN_SMALL))
     pans, zg, ref, extras = analyze_roof(geom, Zs, Ts)
     if not pans:
         return None
     if shade and sun is not None:
-        bmask = rasterize([g.buffer(0.8) for g in nearby], Zb.shape, Tb)
-        own = rasterize([geom.buffer(1.0)], Zb.shape, Tb)
+        res_b = abs(Tb.a)
+        bmask = dilate(rasterize(nearby, Zb.shape, Tb), max(1, round(0.8 / res_b)))
+        own = dilate(rasterize([geom], Zb.shape, Tb), max(1, round(1.0 / res_b)))
     ymax = yield_model.ymax
     for p in pans:
         loss = loss_b = 0.0
