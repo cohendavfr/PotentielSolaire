@@ -12,7 +12,7 @@ PVGIS n'étant pas accessible depuis un navigateur (pas d'en-têtes CORS), les r
 
 ## Bilan économique
 
-Dans la fiche d'un bâtiment (page adresse ou page d'une ville), le tableau des pans donne le **nombre de panneaux possibles** par pan (modules de 430 Wc, environ 1,13 x 1,72 m, entiers, sur 60 % du pan ou 45 % d'un toit plat). On coche les pans à équiper (par défaut ceux à 85 % ou plus du rendement optimal) et le bilan se recalcule : puissance, production, part autoconsommée, **investissement estimé** et **gain annuel** (économie sur la facture plus vente du surplus), temps de retour.
+Dans la fiche d'un bâtiment (page adresse ou page d'une ville), le tableau des pans donne le **nombre de panneaux possibles** par pan (modules de 430 Wc, environ 1,13 x 1,72 m, entiers, sur 70 % d'un pan incliné ou 80 % d'un toit plat). On règle le nombre de panneaux de chaque pan (de 0 au maximum possible ; par défaut le maximum sur les pans à 85 % ou plus du rendement optimal, 0 ailleurs) et le bilan se recalcule : puissance, production, part autoconsommée, **investissement estimé** et **gain annuel** (économie sur la facture plus vente du surplus), temps de retour.
 
 Hypothèses par défaut (octobre 2026), toutes modifiables dans la fiche et à vérifier :
 - prix du kWh évité : 0,2001 € TTC, tarif réglementé Base 6 kVA (CRE, hausse du 1er août 2026) ;
@@ -49,7 +49,7 @@ Les homonymes sont départagés avec `--dep` ou `--insee`. L'analyse seule (sans
    - course du soleil sur 12 jours types, toutes les 15 minutes, pondérée par le rayonnement direct mensuel PVGIS (ciel clair recalé) ;
    - les arbres laissent passer une partie du soleil, davantage hors feuillage (55 % de novembre à mars, 15 % de mai à septembre) ;
    - le rayonnement diffus (part mensuelle PVGIS) est réduit selon la part de ciel masquée.
-7. Production : surface équipable (60 % d'un pan, 45 % d'un toit plat) à 5 m² par kWc. Seuls les pans à 85 % ou plus du rendement optimal comptent dans la production potentielle.
+7. Production : surface équipable (70 % d'un pan incliné, 80 % d'un toit plat) à 5 m² par kWc. Seuls les pans à 85 % ou plus du rendement optimal comptent dans la production potentielle.
 
 ## Sorties de l'analyse (`resultats/<INSEE>/`)
 

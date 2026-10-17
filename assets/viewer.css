@@ -71,3 +71,5 @@ dl.bil dt{color:var(--mute)} dl.bil .tot{color:var(--ink);font-weight:700;border
 #info details{margin-top:8px;font-size:12px} #info summary{cursor:pointer;color:var(--acc);font-weight:600}
 #info table.pans input[type=checkbox]{margin:0}
 #info a{color:var(--acc)}
+
+td.npan{white-space:nowrap;color:var(--mute)} td.npan input{width:46px;padding:2px 4px;border:1px solid var(--line);border-radius:5px;background:var(--bg);color:var(--ink);font:inherit;text-align:right}

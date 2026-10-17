@@ -329,20 +329,21 @@ function startViewer(opts) {
   //    (arrêté du 1er juin 2026, JO du 4 juin 2026) ; la prime à l'autoconsommation a été supprimée ;
   //  - coût de l'installation : ordre de grandeur 2026 pour du résidentiel posé, TTC (TVA 5,5 % jusqu'à 9 kWc) :
   //    forfait + prix par kWc, d'où environ 7 400 € pour 3 kWc, 11 400 € pour 6 kWc, 15 500 € pour 9 kWc.
+  const MODULE_KWC = 0.43;                            // module de 430 Wc
   const ECO0 = {prixKwh: 0.2001, surplus: 0.011, conso: 5000, scAuto: true, sc: 40, fixe: 3300, parKwc: 1350, prime: 0};
   const ECO = Object.assign({}, ECO0);
   try { Object.assign(ECO, JSON.parse(localStorage.getItem('eco-v1') || '{}')); } catch (e) {}
   const saveEco = () => { try { localStorage.setItem('eco-v1', JSON.stringify(ECO)); } catch (e) {} };
-  const equip = {};                                   // bâtiment -> ensemble des pans à équiper
+  const equip = {};                                   // bâtiment -> {pan: nombre de panneaux retenus}
   const euro = n => Math.round(n).toLocaleString('fr-FR') + ' €';
   const equipOf = bi => {
-    if (!equip[bi]) equip[bi] = new Set(B[bi].pans.map((p, k) => (p.ratio >= 0.85 && p.n > 0) ? k : -1).filter(k => k >= 0));
+    if (!equip[bi]) { equip[bi] = {}; B[bi].pans.forEach((p, k) => { equip[bi][k] = (p.ratio >= 0.85 && p.n > 0) ? p.n : 0; }); }
     return equip[bi];
   };
   function bilan(bi) {
-    const set = equipOf(bi), ps = [...set].map(k => B[bi].pans[k]);
-    const n = ps.reduce((s, p) => s + p.n, 0), kwc = ps.reduce((s, p) => s + p.kwp, 0), prod = ps.reduce((s, p) => s + p.kwh, 0);
-    const area = ps.reduce((s, p) => s + p.n * 1.94, 0);
+    const sel = equipOf(bi), ps = B[bi].pans.map((p, k) => ({p, n: sel[k] || 0})).filter(x => x.n > 0);
+    const n = ps.reduce((s, x) => s + x.n, 0), kwc = n * MODULE_KWC, prod = ps.reduce((s, x) => s + x.n * MODULE_KWC * x.p.y, 0);
+    const area = n * 1.94;
     const conso = Math.max(ECO.conso, 1);
     let sc = ECO.scAuto ? clamp(0.38 * Math.pow(conso / Math.max(prod, 1), 0.7), 0.1, 0.85) : clamp(ECO.sc / 100, 0, 1);
     const auto = Math.min(sc * prod, conso * 0.9), inj = Math.max(prod - auto, 0);
@@ -354,8 +355,8 @@ function startViewer(opts) {
   function bilanHtml(bi) {
     const r = bilan(bi), small = r.kwc > 0 && r.kwc < 1.5;
     const num = (id, label, v, step) => `<label class="eco-l">${label}<input class="eco-in" id="${id}" type="number" step="${step}" value="${v}"></label>`;
-    return `<h3>Bilan économique · pans cochés</h3>
-      ${r.n === 0 ? '<p class="note">Cochez au moins un pan dans le tableau pour chiffrer l\'installation.</p>' : `<dl class="bil">
+    return `<h3>Bilan économique · panneaux retenus</h3>
+      ${r.n === 0 ? '<p class="note">Indiquez un nombre de panneaux dans le tableau pour chiffrer l\'installation.</p>' : `<dl class="bil">
         <dt>Panneaux (430 Wc)</dt><dd><b>${r.n}</b> · ${r.kwc.toFixed(2)} kWc · ${Math.round(r.area)} m²</dd>
         <dt>Production</dt><dd>${Math.round(r.prod).toLocaleString('fr-FR')} kWh/an</dd>
         <dt>Autoconsommé</dt><dd>${Math.round(r.auto).toLocaleString('fr-FR')} kWh (${Math.round(r.sc * 100)} %)</dd>
@@ -405,10 +406,10 @@ function startViewer(opts) {
     }
     const set = equipOf(selB);
     const rows = b.pans.map((p, k) => `<tr class="pr${k === selP ? ' sel' : ''}" data-k="${k}">
-        <td><input type="checkbox" class="eq" data-k="${k}"${set.has(k) ? ' checked' : ''}${p.n > 0 ? '' : ' disabled'} title="Équiper ce pan"></td>
         <td><span class="pdot" style="background:#${panColor(p).getHexString()}"></span>${p.pan}</td>
-        <td>${compass(p.az)} ${Math.round(p.az)}° · ${Math.round(p.tilt)}°</td><td>${p.n}</td>
-        <td>${(p.sh * 100).toFixed(0)} %</td><td>${Math.round(p.y)}</td><td>${Math.round(p.kwh).toLocaleString('fr-FR')}</td></tr>`).join('');
+        <td>${compass(p.az)} ${Math.round(p.az)}° · ${Math.round(p.tilt)}°</td>
+        <td class="npan"><input type="number" class="eq" data-k="${k}" min="0" max="${p.n}" value="${set[k] || 0}"${p.n > 0 ? '' : ' disabled'} title="Nombre de panneaux retenus (maximum ${p.n})"> / ${p.n}</td>
+        <td>${(p.sh * 100).toFixed(0)} %</td><td>${Math.round(p.y)}</td><td class="kwhc" data-k="${k}">${Math.round((set[k] || 0) * MODULE_KWC * p.y).toLocaleString('fr-FR')}</td></tr>`).join('');
     let detail = '';
     if (selP >= 0) {
       const p = b.pans[selP];
@@ -425,18 +426,27 @@ function startViewer(opts) {
       <dl><dt>Meilleur pan</dt><dd>${Math.round(b.y)} kWh/kWc/an (${Math.round(b.ratio * 100)} %)</dd>
       <dt>Panneaux possibles (tous pans)</dt><dd>${totN}</dd><dt>Hauteur</dt><dd>${b.h} m</dd></dl>
       ${detail}
-      <table class="pans"><thead><tr><th title="Équiper">☑</th><th>Pan</th><th>Orient. · pente</th><th>Pann.</th><th>Ombre</th><th>kWh/kWc</th><th>kWh/an</th></tr></thead><tbody>${rows}</tbody></table>
-      <p class="note">Par défaut, les pans à 85 % ou plus du rendement optimal sont cochés. Cliquez un pan pour le détail.</p>
+      <table class="pans"><thead><tr><th>Pan</th><th>Orient. · pente</th><th title="Nombre de panneaux retenus / maximum possible">Panneaux</th><th>Ombre</th><th>kWh/kWc</th><th title="Production des panneaux retenus">kWh/an</th></tr></thead><tbody>${rows}</tbody></table>
+      <p class="note">Modifiez le nombre de panneaux de chaque pan (maximum = surface équipable à 70 % d'un pan incliné, 80 % d'un toit plat). Par défaut, le maximum est retenu sur les pans à 85 % ou plus du rendement optimal. Cliquez un pan pour le détail.</p>
       <div id="bilanBox">${bilanHtml(selB)}</div>`;
     wireEco();
   }
   info.addEventListener('click', e => {
-    const cb = e.target.closest('input.eq');
-    if (cb) {                                            // cocher / décocher un pan : recalcule le bilan seulement
-      const k = +cb.dataset.k, set = equipOf(selB);
-      cb.checked ? set.add(k) : set.delete(k); refreshBilan(); return;
-    }
+    if (e.target.closest('input.eq')) return;           // la saisie du nombre de panneaux ne sélectionne pas le pan
     const r = e.target.closest('tr.pr'); if (r) select(selB, selP === +r.dataset.k ? -1 : +r.dataset.k, false);
+  });
+  info.addEventListener('input', e => {
+    const inp = e.target.closest('input.eq'); if (!inp) return;
+    const k = +inp.dataset.k, p = B[selB].pans[k];
+    const v = clamp(Math.round(parseFloat(inp.value) || 0), 0, p.n);
+    equipOf(selB)[k] = v;
+    const cell = info.querySelector(`td.kwhc[data-k="${k}"]`);
+    if (cell) cell.textContent = Math.round(v * MODULE_KWC * p.y).toLocaleString('fr-FR');
+    refreshBilan();
+  });
+  info.addEventListener('change', e => {                // valeur hors limites : on remet dans [0, maximum]
+    const inp = e.target.closest('input.eq'); if (!inp) return;
+    const k = +inp.dataset.k; inp.value = equipOf(selB)[k];
   });
 
   // pastilles numérotées des pans du bâtiment sélectionné
