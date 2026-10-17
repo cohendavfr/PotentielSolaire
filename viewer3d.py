@@ -22,7 +22,7 @@ from shapely.ops import linemerge, unary_union
 import santeny_solaire as ss
 
 ORTHO_LAYER = "ORTHOIMAGERY.ORTHOPHOTOS"
-ORTHO_PX = 3600
+ORTHO_PX = 3000
 
 
 def fetch_ortho(bounds):
