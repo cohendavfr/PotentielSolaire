@@ -10,6 +10,18 @@ La page `adresse.html` accepte n'importe quelle adresse de France métropolitain
 
 PVGIS n'étant pas accessible depuis un navigateur (pas d'en-têtes CORS), les rendements viennent d'une grille précalculée de la France (`data/pvgis_fr.json`, pas de 0,5°, interpolée), générée par `python tools/build_pvgis_grid.py` (environ 40 minutes, à relancer rarement).
 
+## Bilan économique
+
+Dans la fiche d'un bâtiment (page adresse ou page d'une ville), le tableau des pans donne le **nombre de panneaux possibles** par pan (modules de 430 Wc, environ 1,13 x 1,72 m, entiers, sur 60 % du pan ou 45 % d'un toit plat). On coche les pans à équiper (par défaut ceux à 85 % ou plus du rendement optimal) et le bilan se recalcule : puissance, production, part autoconsommée, **investissement estimé** et **gain annuel** (économie sur la facture plus vente du surplus), temps de retour.
+
+Hypothèses par défaut (octobre 2026), toutes modifiables dans la fiche et à vérifier :
+- prix du kWh évité : 0,2001 € TTC, tarif réglementé Base 6 kVA (CRE, hausse du 1er août 2026) ;
+- surplus injecté (≤ 9 kWc) : 1,1 c€/kWh HT, aucune prime à l'autoconsommation (arrêté du 1er juin 2026, JO du 4 juin 2026) ; des sources donnent encore 4 c€ ;
+- coût TTC de l'installation posée : 3 300 € + 1 350 €/kWc (soit environ 7 400 € pour 3 kWc, 11 400 € pour 6 kWc, 15 500 € pour 9 kWc), TVA 5,5 % jusqu'à 9 kWc, majoration TVA 20 % au-delà ;
+- consommation du foyer : 5 000 kWh/an, autoconsommation estimée par `0,38 x (consommation / production)^0,7` (sans batterie).
+
+Hors batterie, dégradation des modules, maintenance et remplacement de l'onduleur. Ces valeurs sont des ordres de grandeur, pas un devis.
+
 ## Choisir une ville
 
 - **Sur le site** : la page d'accueil permet de chercher n'importe quelle commune de France métropolitaine. Si elle est déjà analysée, la maquette s'ouvre. Sinon, la page indique comment lancer l'analyse.

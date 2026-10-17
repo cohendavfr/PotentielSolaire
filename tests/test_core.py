@@ -79,6 +79,9 @@ assert t["shade_loss"] > 0 and t["shade_bati"] == 0 and t["shade_arbres"] > 0, t
 assert h["shade_bati"] > 0 and h["shade_arbres"] == 0, h
 assert h["shade_loss"] > t["shade_loss"], (h, t)
 assert t["ratio"] < south(free)["ratio"]
+for p_ in free["pans"]:
+    assert p_["panneaux"] == int(p_["area"] * c.USABLE_RATIO / c.M2_PER_KWP / c.MODULE_KWP + 1e-9) and p_["panneaux"] > 10, p_
+    assert abs(p_["kwp"] - p_["panneaux"] * c.MODULE_KWP) < 0.01
 assert free["pans"][0]["pan"] == 1 and free["pans"][0]["ratio"] >= free["pans"][1]["ratio"]
 
 # toit plat : un seul pan, plan horizontal

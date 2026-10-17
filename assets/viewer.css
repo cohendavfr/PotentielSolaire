@@ -62,3 +62,12 @@ table.pans tr.sel td{background:rgba(217,130,43,.22)}
 .hintin b{color:var(--ink)}
 .btn{display:inline-block;margin-top:8px;background:var(--acc);color:#fff;border:0;border-radius:9px;padding:8px 14px;font:600 13px system-ui,sans-serif;cursor:pointer}
 @media(max-width:760px){#info{left:16px;right:16px;width:auto}}
+
+.eco-l{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:12px;margin:5px 0}
+.eco-l input[type=number]{width:96px;padding:4px 6px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink);font:inherit;text-align:right}
+dl.bil{margin:0;display:grid;grid-template-columns:auto 1fr;gap:3px 10px;font-size:13px}
+dl.bil dd{margin:0;text-align:right;font-variant-numeric:tabular-nums}
+dl.bil dt{color:var(--mute)} dl.bil .tot{color:var(--ink);font-weight:700;border-top:1px solid var(--line);padding-top:4px}
+#info details{margin-top:8px;font-size:12px} #info summary{cursor:pointer;color:var(--acc);font-weight:600}
+#info table.pans input[type=checkbox]{margin:0}
+#info a{color:var(--acc)}

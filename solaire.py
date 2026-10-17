@@ -320,14 +320,14 @@ def analyse(commune, out, cache, mns=None, all_usages=False, shade=True, limit=0
             if r:
                 geo[bid] = dict(zg=r["zg"], ref=r["ref"], extras=r["extras"], pans=[
                     dict(pan=p["pan"], plane=p["plane"], zr=p["zr"], polys=p["polys"], ratio=p["ratio"],
-                         y=p["yield_kwh_kwp"], az=p["az"], tilt=p["tilt"], area=p["area_m2"], kwp=p["kwp"],
+                         y=p["yield_kwh_kwp"], az=p["az"], tilt=p["tilt"], area=p["area_m2"], n=p["panneaux"], kwp=p["kwp"],
                          kwh=p["kwh_an"], sh=p["shade_loss"], sb=p["shade_bati"], sa=p["shade_arbres"],
                          flat=bool(p["flat"])) for p in r["pans"]])
                 for p in r["pans"]:
                     rows.append(dict(
                         bat_id=bid, pan=p["pan"], az=p["az"], tilt=p["tilt"], area_m2=p["area_m2"], plat=p["flat"],
                         shade_loss=p["shade_loss"], shade_bati=p["shade_bati"], shade_arbres=p["shade_arbres"],
-                        yield_kwh_kwp=p["yield_kwh_kwp"], ratio=p["ratio"], kwp=p["kwp"], kwh_an=p["kwh_an"]))
+                        yield_kwh_kwp=p["yield_kwh_kwp"], ratio=p["ratio"], panneaux=p["panneaux"], kwp=p["kwp"], kwh_an=p["kwh_an"]))
             if n % 100 == 0:
                 print(f"  {n}/{len(blds)}", flush=True)
     pans = pd.DataFrame(rows)

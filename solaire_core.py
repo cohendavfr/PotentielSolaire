@@ -23,7 +23,8 @@ MIN_FLAT_M2 = 8.0      # idem pour un pan de toit plat
 USABLE_RATIO = 0.6     # part du pan réellement équipable (rives, cheminées, velux)
 FLAT_USABLE = 0.45     # idem toit plat (espacement des rangées)
 FLAT_TILT = 15.0       # inclinaison supposée des structures sur toit plat
-M2_PER_KWP = 5.0       # surface de panneaux par kWc
+M2_PER_KWP = 5.0       # surface de toit par kWc (modules + espacement)
+MODULE_KWP = 0.43      # puissance d'un module standard (kWc) : 430 Wc, environ 1,13 x 1,72 m
 PAN_BIN = 20           # largeur des classes d'azimut pour regrouper les pans (°)
 GOOD_RATIO = 0.85      # un pan est "bon" s'il fait au moins 85 % du rendement optimal
 PLANE_TOL = 0.35       # écart maximal d'un pixel à son plan de toit (m)
@@ -583,8 +584,10 @@ def analyze_building(geom, Zb, Tb, nearby, yield_model, sun=None, shade=True):
             loss, loss_b = shade_losses(Hb, Hv, min(max(p["tilt"], 0), 90), p["az"], sun)
         y = yield_model(p["tilt"], p["az"])
         y_net = y * (1 - loss)
-        kwp = p["area"] * p["usable"] / M2_PER_KWP
+        n_mod = int(p["area"] * p["usable"] / M2_PER_KWP / MODULE_KWP + 1e-9)   # modules entiers
+        kwp = n_mod * MODULE_KWP
         p.update(
+            panneaux=n_mod,
             area_m2=round(p["area"], 1), shade_loss=round(loss, 3), shade_bati=round(loss_b, 3),
             shade_arbres=round(max(loss - loss_b, 0.0), 3),
             yield_kwh_kwp=round(y_net, 0), ratio=round(y_net / ymax, 3),

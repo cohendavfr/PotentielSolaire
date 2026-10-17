@@ -320,6 +320,78 @@ function startViewer(opts) {
   if (topEl) topEl.addEventListener('click', e => { const r = e.target.closest('.row'); if (r) select(+r.dataset.i, -1, true); });
 
   const info = $('info');
+
+  // ------------------------------------------------------------------ bilan économique
+  // Hypothèses par défaut (octobre 2026) — modifiables dans le panneau, à vérifier avant toute décision :
+  //  - prix du kWh : tarif réglementé de vente d'électricité, option Base, 6 kVA : 0,2001 € TTC/kWh
+  //    (délibération CRE du 15 juillet 2026, hausse du 1er août 2026) ;
+  //  - surplus injecté : 1,1 c€/kWh HT pour une installation ≤ 9 kWc, indexé de 2 % par an
+  //    (arrêté du 1er juin 2026, JO du 4 juin 2026) ; la prime à l'autoconsommation a été supprimée ;
+  //  - coût de l'installation : ordre de grandeur 2026 pour du résidentiel posé, TTC (TVA 5,5 % jusqu'à 9 kWc) :
+  //    forfait + prix par kWc, d'où environ 7 400 € pour 3 kWc, 11 400 € pour 6 kWc, 15 500 € pour 9 kWc.
+  const ECO0 = {prixKwh: 0.2001, surplus: 0.011, conso: 5000, scAuto: true, sc: 40, fixe: 3300, parKwc: 1350, prime: 0};
+  const ECO = Object.assign({}, ECO0);
+  try { Object.assign(ECO, JSON.parse(localStorage.getItem('eco-v1') || '{}')); } catch (e) {}
+  const saveEco = () => { try { localStorage.setItem('eco-v1', JSON.stringify(ECO)); } catch (e) {} };
+  const equip = {};                                   // bâtiment -> ensemble des pans à équiper
+  const euro = n => Math.round(n).toLocaleString('fr-FR') + ' €';
+  const equipOf = bi => {
+    if (!equip[bi]) equip[bi] = new Set(B[bi].pans.map((p, k) => (p.ratio >= 0.85 && p.n > 0) ? k : -1).filter(k => k >= 0));
+    return equip[bi];
+  };
+  function bilan(bi) {
+    const set = equipOf(bi), ps = [...set].map(k => B[bi].pans[k]);
+    const n = ps.reduce((s, p) => s + p.n, 0), kwc = ps.reduce((s, p) => s + p.kwp, 0), prod = ps.reduce((s, p) => s + p.kwh, 0);
+    const area = ps.reduce((s, p) => s + p.n * 1.94, 0);
+    const conso = Math.max(ECO.conso, 1);
+    let sc = ECO.scAuto ? clamp(0.38 * Math.pow(conso / Math.max(prod, 1), 0.7), 0.1, 0.85) : clamp(ECO.sc / 100, 0, 1);
+    const auto = Math.min(sc * prod, conso * 0.9), inj = Math.max(prod - auto, 0);
+    const ecoFacture = auto * ECO.prixKwh, revSurplus = inj * ECO.surplus, eco = ecoFacture + revSurplus;
+    const brut = kwc > 0 ? (ECO.fixe + ECO.parKwc * kwc) * (kwc > 9 ? 1.20 / 1.055 : 1) : 0;
+    const net = Math.max(brut - (ECO.prime || 0) * kwc, 0);
+    return {n, kwc, prod, area, sc: prod > 0 ? auto / prod : 0, auto, inj, ecoFacture, revSurplus, eco, brut, net, retour: eco > 0 ? net / eco : Infinity};
+  }
+  function bilanHtml(bi) {
+    const r = bilan(bi), small = r.kwc > 0 && r.kwc < 1.5;
+    const num = (id, label, v, step) => `<label class="eco-l">${label}<input class="eco-in" id="${id}" type="number" step="${step}" value="${v}"></label>`;
+    return `<h3>Bilan économique · pans cochés</h3>
+      ${r.n === 0 ? '<p class="note">Cochez au moins un pan dans le tableau pour chiffrer l\'installation.</p>' : `<dl class="bil">
+        <dt>Panneaux (430 Wc)</dt><dd><b>${r.n}</b> · ${r.kwc.toFixed(2)} kWc · ${Math.round(r.area)} m²</dd>
+        <dt>Production</dt><dd>${Math.round(r.prod).toLocaleString('fr-FR')} kWh/an</dd>
+        <dt>Autoconsommé</dt><dd>${Math.round(r.auto).toLocaleString('fr-FR')} kWh (${Math.round(r.sc * 100)} %)</dd>
+        <dt>Injecté (surplus)</dt><dd>${Math.round(r.inj).toLocaleString('fr-FR')} kWh</dd>
+        <dt>Économie sur la facture</dt><dd>${euro(r.ecoFacture)}/an</dd>
+        <dt>Vente du surplus</dt><dd>${euro(r.revSurplus)}/an</dd>
+        <dt class="tot">Gain annuel</dt><dd class="tot">${euro(r.eco)}/an</dd>
+        <dt>Investissement estimé (TTC)</dt><dd>${euro(r.net)}</dd>
+        <dt>Retour sur investissement</dt><dd>${isFinite(r.retour) ? r.retour.toFixed(1).replace('.', ',') + ' ans' : '—'}</dd></dl>
+        ${small ? '<p class="note">Très petite installation : le coût fixe (pose, raccordement, onduleur) pèse lourd, le retour est peu représentatif.</p>' : ''}`}
+      <details id="ecoDet"${info.dataset.ecoOpen ? ' open' : ''}><summary>Hypothèses (modifiables)</summary>
+        ${num('e-conso', 'Consommation du foyer (kWh/an)', ECO.conso, 100)}
+        <label class="eco-l">Autoconsommation <span><input id="e-auto" type="checkbox"${ECO.scAuto ? ' checked' : ''}> estimée</span>
+          <input class="eco-in" id="e-sc" type="number" step="5" min="0" max="100" value="${ECO.sc}"${ECO.scAuto ? ' disabled' : ''}> %</label>
+        ${num('e-prix', 'Prix du kWh évité (€ TTC)', ECO.prixKwh, 0.005)}
+        ${num('e-surplus', 'Tarif du surplus (€/kWh)', ECO.surplus, 0.005)}
+        ${num('e-fixe', 'Coût fixe de l\'installation (€ TTC)', ECO.fixe, 100)}
+        ${num('e-kwc', 'Coût par kWc (€ TTC)', ECO.parKwc, 50)}
+        ${num('e-prime', 'Aide à l\'investissement (€/kWc)', ECO.prime, 10)}
+        <p class="note">Prix du kWh : tarif réglementé Base 6 kVA, 0,2001 € TTC (<a href="https://selectra.info/energie/electricite/prix/trv" target="_blank">CRE, août 2026</a>). Surplus ≤ 9 kWc : 1,1 c€/kWh HT, aucune prime à l'autoconsommation (arrêté du 1<sup>er</sup> juin 2026, <a href="https://www.artyseo.fr/blog/reforme-s21-juin-2026-panneaux-solaires/" target="_blank">détail</a>) ; certaines sources donnent encore 4 c€ : vérifiez auprès d'EDF OA. Coûts : ordres de grandeur 2026, pose comprise, TVA 5,5 % jusqu'à 9 kWc (<a href="https://www.potentielsolaire.com/prix-panneaux-solaires" target="_blank">sources</a>). Hors batterie, dégradation des modules (~0,4 %/an), maintenance et remplacement de l'onduleur. Devis RGE à demander.</p>
+        <button class="btn" id="e-reset" style="margin-top:4px">Valeurs par défaut</button>
+      </details>`;
+  }
+  function refreshBilan() {
+    const box = $('bilanBox'); if (!box || selB < 0) return;
+    info.dataset.ecoOpen = $('ecoDet') && $('ecoDet').open ? '1' : '';
+    box.innerHTML = bilanHtml(selB);
+    wireEco();
+  }
+  function wireEco() {
+    const f = (id, key, scale) => { const el = $(id); if (el) el.oninput = () => { const v = parseFloat(el.value); if (isFinite(v)) { ECO[key] = v * (scale || 1); saveEco(); const keep = el.id, pos = el.selectionStart; refreshBilan(); const e2 = $(keep); if (e2) { e2.focus(); try { e2.setSelectionRange(pos, pos); } catch (x) {} } } }; };
+    f('e-conso', 'conso'); f('e-sc', 'sc'); f('e-prix', 'prixKwh'); f('e-surplus', 'surplus'); f('e-fixe', 'fixe'); f('e-kwc', 'parKwc'); f('e-prime', 'prime');
+    if ($('e-auto')) $('e-auto').onchange = e => { ECO.scAuto = e.target.checked; saveEco(); refreshBilan(); };
+    if ($('e-reset')) $('e-reset').onclick = () => { Object.assign(ECO, ECO0); saveEco(); refreshBilan(); };
+  }
+
   function showInfo() {
     if (selB < 0) { info.style.display = 'none'; return; }
     const b = B[selB];
@@ -331,31 +403,41 @@ function startViewer(opts) {
       if ($('anaBtn')) $('anaBtn').onclick = () => opts.onAnalyse(b.id);
       return;
     }
-    const totKwp = b.pans.filter(p => p.ratio >= 0.85).reduce((s, p) => s + p.kwp, 0);
+    const set = equipOf(selB);
     const rows = b.pans.map((p, k) => `<tr class="pr${k === selP ? ' sel' : ''}" data-k="${k}">
+        <td><input type="checkbox" class="eq" data-k="${k}"${set.has(k) ? ' checked' : ''}${p.n > 0 ? '' : ' disabled'} title="Équiper ce pan"></td>
         <td><span class="pdot" style="background:#${panColor(p).getHexString()}"></span>${p.pan}</td>
-        <td>${compass(p.az)} ${Math.round(p.az)}°</td><td>${Math.round(p.tilt)}°</td><td>${Math.round(p.area)} m²</td>
+        <td>${compass(p.az)} ${Math.round(p.az)}° · ${Math.round(p.tilt)}°</td><td>${p.n}</td>
         <td>${(p.sh * 100).toFixed(0)} %</td><td>${Math.round(p.y)}</td><td>${Math.round(p.kwh).toLocaleString('fr-FR')}</td></tr>`).join('');
     let detail = '';
     if (selP >= 0) {
       const p = b.pans[selP];
       detail = `<h3>Pan ${p.pan}${p.flat ? ' · toit plat' : ''}</h3><dl>
         <dt>Orientation</dt><dd>${Math.round(p.az)}° (${compass(p.az)})</dd><dt>Pente</dt><dd>${Math.round(p.tilt)}°</dd>
-        <dt>Surface du pan</dt><dd>${Math.round(p.area)} m²</dd><dt>Puissance installable</dt><dd>${p.kwp.toFixed(1)} kWc</dd>
+        <dt>Surface du pan</dt><dd>${Math.round(p.area)} m²</dd><dt>Panneaux possibles</dt><dd><b>${p.n}</b> · ${p.kwp.toFixed(2)} kWc</dd>
         <dt>Rendement</dt><dd>${Math.round(p.y)} kWh/kWc/an (${Math.round(p.ratio * 100)} %)</dd>
         <dt>Production</dt><dd>${Math.round(p.kwh).toLocaleString('fr-FR')} kWh/an</dd>
         <dt>Ombrage du pan</dt><dd>${(p.sh * 100).toFixed(1)} %</dd><dt>· dont arbres</dt><dd>${(p.sa * 100).toFixed(1)} %</dd>
         <dt>· dont bâti</dt><dd>${(p.sb * 100).toFixed(1)} %</dd></dl>`;
     }
+    const totN = b.pans.reduce((s, p) => s + p.n, 0);
     info.innerHTML = `<h2>${MODE === 'commune' ? 'Bâtiment #' + b.rank : 'Bâtiment analysé'} · ${b.pans.length} pan${b.pans.length > 1 ? 's' : ''}</h2>${ad}
       <dl><dt>Meilleur pan</dt><dd>${Math.round(b.y)} kWh/kWc/an (${Math.round(b.ratio * 100)} %)</dd>
-      <dt>Puissance (pans ≥ 85 %)</dt><dd>${totKwp.toFixed(1)} kWc</dd>
-      <dt>Production (pans ≥ 85 %)</dt><dd>${Math.round(b.kwh).toLocaleString('fr-FR')} kWh/an</dd><dt>Hauteur</dt><dd>${b.h} m</dd></dl>
+      <dt>Panneaux possibles (tous pans)</dt><dd>${totN}</dd><dt>Hauteur</dt><dd>${b.h} m</dd></dl>
       ${detail}
-      <table class="pans"><thead><tr><th>Pan</th><th>Orient.</th><th>Pente</th><th>Surf.</th><th>Ombre</th><th>kWh/kWc</th><th>kWh/an</th></tr></thead><tbody>${rows}</tbody></table>
-      <p class="note">Cliquez un pan (sur le plan ou dans le tableau) pour le détail. Estimation indicative.</p>`;
+      <table class="pans"><thead><tr><th title="Équiper">☑</th><th>Pan</th><th>Orient. · pente</th><th>Pann.</th><th>Ombre</th><th>kWh/kWc</th><th>kWh/an</th></tr></thead><tbody>${rows}</tbody></table>
+      <p class="note">Par défaut, les pans à 85 % ou plus du rendement optimal sont cochés. Cliquez un pan pour le détail.</p>
+      <div id="bilanBox">${bilanHtml(selB)}</div>`;
+    wireEco();
   }
-  info.addEventListener('click', e => { const r = e.target.closest('tr.pr'); if (r) select(selB, selP === +r.dataset.k ? -1 : +r.dataset.k, false); });
+  info.addEventListener('click', e => {
+    const cb = e.target.closest('input.eq');
+    if (cb) {                                            // cocher / décocher un pan : recalcule le bilan seulement
+      const k = +cb.dataset.k, set = equipOf(selB);
+      cb.checked ? set.add(k) : set.delete(k); refreshBilan(); return;
+    }
+    const r = e.target.closest('tr.pr'); if (r) select(selB, selP === +r.dataset.k ? -1 : +r.dataset.k, false);
+  });
 
   // pastilles numérotées des pans du bâtiment sélectionné
   const layer = $('labels');

@@ -144,7 +144,7 @@ def local_geo(g, part, cx, cy):
         if polys:
             out.append(dict(
                 pan=p["pan"], pl=plane(p["plane"]), zr=p["zr"], polys=polys,
-                ratio=p["ratio"], y=p["y"], az=p["az"], tilt=p["tilt"], area=p["area"], kwp=p["kwp"], kwh=p["kwh"],
+                ratio=p["ratio"], y=p["y"], az=p["az"], tilt=p["tilt"], area=p["area"], n=p["n"], kwp=p["kwp"], kwh=p["kwh"],
                 sh=p["sh"], sb=p["sb"], sa=p["sa"], flat=p["flat"]))
     xtra = []
     for e in g.get("extras", []):

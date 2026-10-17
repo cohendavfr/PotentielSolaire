@@ -129,7 +129,7 @@ def analyze(lon, lat, label, geojson_text, bil_bytes, bbox, width, height, grid_
         polys = [[_local_ring(ext, cx, cy), [_local_ring(h, cx, cy) for h in holes]] for ext, holes in p["polys"]]
         pans.append(dict(
             pan=p["pan"], pl=[round(a, 4), round(b, 4), round(c + a * (cx - xr) + b * (cy - yr), 3)], zr=p["zr"], polys=polys,
-            ratio=p["ratio"], y=p["yield_kwh_kwp"], az=p["az"], tilt=p["tilt"], area=p["area_m2"], kwp=p["kwp"],
+            ratio=p["ratio"], y=p["yield_kwh_kwp"], az=p["az"], tilt=p["tilt"], area=p["area_m2"], n=p["panneaux"], kwp=p["kwp"],
             kwh=p["kwh_an"], sh=p["shade_loss"], sb=p["shade_bati"], sa=p["shade_arbres"], flat=bool(p["flat"])))
     xtra = []
     for e in res["extras"]:
