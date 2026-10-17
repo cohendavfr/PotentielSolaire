@@ -1,0 +1,6 @@
+cache/
+resultats/
+__pycache__/
+*.tif
+*.gpkg
+.venv/
