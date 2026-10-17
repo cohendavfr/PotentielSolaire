@@ -427,7 +427,7 @@ function startViewer(opts) {
       <dt>Panneaux possibles (tous pans)</dt><dd>${totN}</dd><dt>Hauteur</dt><dd>${b.h} m</dd></dl>
       ${detail}
       <table class="pans"><thead><tr><th>Pan</th><th>Orient. · pente</th><th title="Nombre de panneaux retenus / maximum possible">Panneaux</th><th>Ombre</th><th>kWh/kWc</th><th title="Production des panneaux retenus">kWh/an</th></tr></thead><tbody>${rows}</tbody></table>
-      <p class="note">Modifiez le nombre de panneaux de chaque pan (maximum = surface équipable à 70 % d'un pan incliné, 80 % d'un toit plat). Par défaut, le maximum est retenu sur les pans à 85 % ou plus du rendement optimal. Cliquez un pan pour le détail.</p>
+      <p class="note">Modifiez le nombre de panneaux de chaque pan (maximum = surface équipable, 90 % du pan). Par défaut, le maximum est retenu sur les pans à 85 % ou plus du rendement optimal. Cliquez un pan pour le détail.</p>
       <div id="bilanBox">${bilanHtml(selB)}</div>`;
     wireEco();
   }
