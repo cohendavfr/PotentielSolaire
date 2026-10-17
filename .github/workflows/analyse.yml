@@ -1,0 +1,48 @@
+name: Analyser une ville
+
+on:
+  workflow_dispatch:
+    inputs:
+      commune:
+        description: "Nom de la commune, code INSEE ou code postal (ex. 94070)"
+        required: true
+      departement:
+        description: "Département pour départager des homonymes (facultatif, ex. 94)"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+concurrency:
+  group: analyse-ville
+  cancel-in-progress: false
+
+jobs:
+  analyse:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Analyse et maquette 3D
+        env:
+          COMMUNE: ${{ inputs.commune }}
+          DEP: ${{ inputs.departement }}
+        run: |
+          args=()
+          if [ -n "$DEP" ]; then args+=(--dep "$DEP"); fi
+          python -u run_commune.py "$COMMUNE" "${args[@]}" --max-batiments 8000
+      - name: Publier
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index.html santeny_3d.html communes
+          git diff --cached --quiet && echo "Rien à publier" && exit 0
+          git commit -m "Analyse de ${{ inputs.commune }}"
+          git pull --rebase
+          git push

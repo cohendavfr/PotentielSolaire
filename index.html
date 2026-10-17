@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Toits solaires 3D</title>
+<style>
+  :root{--bg:#f4f1ea;--panel:#fffdf8;--ink:#1d2a2f;--mute:#6b7478;--line:#ddd6c6;--acc:#d9822b}
+  @media (prefers-color-scheme:dark){:root{--bg:#14191b;--panel:#1d2427;--ink:#e8e6df;--mute:#97a0a3;--line:#323c40;--acc:#f0a050}}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,-apple-system,Segoe UI,sans-serif}
+  main{max-width:880px;margin:0 auto;padding:32px 16px 64px}
+  h1{font-size:26px;margin:0 0 4px} h2{font-size:17px;margin:32px 0 10px}
+  p{margin:6px 0} .sub{color:var(--mute)}
+  .card{display:block;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 16px;text-decoration:none;color:inherit}
+  .card:hover{border-color:var(--acc)}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px}
+  .card b{font-size:16px} .card .k{display:flex;justify-content:space-between;font-size:13px;color:var(--mute);margin-top:4px}
+  input{width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:10px;background:var(--panel);color:var(--ink);font:inherit}
+  #sugg{margin-top:6px;display:none;background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  #sugg div{padding:9px 12px;cursor:pointer;display:flex;justify-content:space-between;gap:8px}
+  #sugg div:hover{background:rgba(127,127,127,.15)}
+  .pill{font-size:12px;color:#fff;background:#1f9d55;border-radius:99px;padding:1px 8px;white-space:nowrap}
+  .pill.no{background:var(--mute)}
+  #how{display:none;margin-top:14px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+  code,pre{font:13px ui-monospace,Menlo,monospace;background:rgba(127,127,127,.15);border-radius:6px}
+  code{padding:1px 5px} pre{padding:10px 12px;overflow:auto}
+  a{color:var(--acc)} ol{padding-left:20px;margin:8px 0}
+  .btn{display:inline-block;margin-top:6px;background:var(--acc);color:#fff;text-decoration:none;padding:8px 14px;border-radius:9px;font-weight:600}
+</style>
+</head>
+<body>
+<main>
+  <h1>Toits solaires 3D</h1>
+  <p class="sub">Potentiel photovoltaïque des toits d'une commune : orientation, pente, ombrage des arbres et du bâti, sur un plan 3D. Données ouvertes IGN (LiDAR HD, BD TOPO), PVGIS et Base Adresse Nationale. Estimations indicatives.</p>
+
+  <h2>Villes déjà analysées</h2>
+  <div class="grid" id="list"></div>
+
+  <h2>Choisir une autre ville</h2>
+  <input id="q" type="search" placeholder="Tapez le nom d'une commune de France métropolitaine…" autocomplete="off">
+  <div id="sugg"></div>
+  <div id="how"></div>
+</main>
+<script>
+const COMMUNES = [{"nom": "Santeny", "insee": "94070", "departement": "94", "lat": 48.73529, "lon": 2.57631, "batiments": 1199, "ratio_median": 0.913, "ombrage_moyen": 0.04, "ombrage_arbres_moyen": 0.032, "kwc_bons_pans": 5154.0, "gwh_an_bons_pans": 5.51, "rendement_optimal": 1158.0, "pertes_systeme": 14.0, "ombrage": "complet", "date": "2026-10-17", "fichier": "94070.html"}];
+const REPO = "cohendavfr/santeny-solaire";
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const byInsee = Object.fromEntries(COMMUNES.map(c => [c.insee, c]));
+const num = (n, d=0) => Number(n).toLocaleString('fr-FR', {maximumFractionDigits: d});
+
+$('list').innerHTML = COMMUNES.length ? COMMUNES.map(c => `
+  <a class="card" href="communes/${esc(c.fichier)}">
+    <b>${esc(c.nom)}</b> <span class="sub">(${esc(c.departement)})</span>
+    <div class="k"><span>${num(c.batiments)} bâtiments</span><span>${num(c.gwh_an_bons_pans, 1)} GWh/an</span></div>
+    <div class="k"><span>ombrage moyen ${num(c.ombrage_moyen*100, 1)} %</span><span>${esc(c.date)}</span></div>
+  </a>`).join('') : '<p class="sub">Aucune pour le moment.</p>';
+
+let timer;
+$('q').addEventListener('input', () => {
+  clearTimeout(timer);
+  const v = $('q').value.trim();
+  if (v.length < 2) { $('sugg').style.display = 'none'; return; }
+  timer = setTimeout(async () => {
+    try {
+      const r = await fetch('https://geo.api.gouv.fr/communes?nom=' + encodeURIComponent(v) +
+        '&fields=nom,code,codeDepartement,population&boost=population&limit=8');
+      const list = (await r.json()).filter(c => !c.code.startsWith('97') && !c.code.startsWith('98'));
+      $('sugg').innerHTML = list.map(c => `<div data-c='${esc(JSON.stringify(c))}'><span>${esc(c.nom)} <span class="sub">(${esc(c.codeDepartement)} · ${num(c.population)} hab.)</span></span>
+        <span class="pill ${byInsee[c.code] ? '' : 'no'}">${byInsee[c.code] ? 'analysée' : 'à analyser'}</span></div>`).join('') || '<div>Aucune commune</div>';
+      $('sugg').style.display = 'block';
+    } catch (e) { $('sugg').style.display = 'none'; }
+  }, 200);
+});
+$('sugg').addEventListener('click', e => {
+  const d = e.target.closest('[data-c]'); if (!d) return;
+  const c = JSON.parse(d.dataset.c);
+  $('sugg').style.display = 'none'; $('q').value = c.nom;
+  if (byInsee[c.code]) { location.href = 'communes/' + byInsee[c.code].fichier; return; }
+  const big = c.population > 60000;
+  $('how').style.display = 'block';
+  $('how').innerHTML = `
+    <b>${esc(c.nom)}</b> (${esc(c.codeDepartement)}, INSEE ${esc(c.code)}) n'a pas encore été analysée.
+    ${big ? '<p class="sub">Grande commune : l\'analyse peut être très longue et la page lourde.</p>' : ''}
+    <p>L'analyse prend de 10 à 40 minutes selon la taille de la commune (téléchargement du LiDAR HD, calcul d'ombrage de chaque toit).</p>
+    <p><b>Depuis GitHub</b> (pour le propriétaire du dépôt) :</p>
+    <ol>
+      <li>Ouvrir l'action <a href="https://github.com/${REPO}/actions/workflows/analyse.yml" target="_blank">« Analyser une ville »</a>.</li>
+      <li>Cliquer <b>Run workflow</b> et saisir le code INSEE : <code>${esc(c.code)}</code>.</li>
+      <li>Une fois terminée, recharger cette page : la ville apparaît dans la liste.</li>
+    </ol>
+    <a class="btn" href="https://github.com/${REPO}/actions/workflows/analyse.yml" target="_blank">Ouvrir GitHub Actions</a>
+    <p style="margin-top:14px"><b>Ou en local</b> :</p>
+    <pre>python run_commune.py --insee ${esc(c.code)}</pre>`;
+});
+</script>
+</body>
+</html>

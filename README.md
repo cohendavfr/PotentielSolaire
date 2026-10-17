@@ -1,52 +1,57 @@
-# santeny-solaire
+# Toits solaires 3D
 
-Classement des toits de Santeny (Val-de-Marne, INSEE 94070) selon leur potentiel photovoltaïque : orientation, pente, ombrage et production estimée.
+Classement des toits d'une commune française selon leur potentiel photovoltaïque (orientation, pente, ombrage des arbres et du bâti, production estimée), avec une maquette 3D interactive.
 
-## Principe
+Site : https://cohendavfr.github.io/santeny-solaire/ (Santeny, Val-de-Marne, est déjà analysée).
 
-1. Contour communal (geo.api.gouv.fr) et bâtiments (BD TOPO, WFS Géoplateforme IGN).
-2. Modèle numérique de surface LiDAR HD de l'IGN (MNS), téléchargé par tuiles ou fourni en GeoTIFF.
-3. Pente et orientation de chaque pan de toit calculées sur le MNS.
-4. Rendement (kWh/kWc/an) interpolé sur une grille PVGIS (mise en cache).
-5. Perte d'ombrage lointain estimée dans le secteur sud.
-6. Classement des bâtiments.
+## Choisir une ville
 
-## Installation
+- **Sur le site** : la page d'accueil permet de chercher n'importe quelle commune de France métropolitaine. Si elle est déjà analysée, la maquette s'ouvre. Sinon, la page indique comment lancer l'analyse.
+- **Depuis GitHub** : onglet *Actions* > *Analyser une ville* > *Run workflow*, puis saisir un nom, un code INSEE ou un code postal. Le résultat est publié automatiquement (10 à 40 minutes selon la taille de la commune).
+- **En local** :
 
 ```
 pip install -r requirements.txt
+python run_commune.py Santeny
+python run_commune.py "Boissy-Saint-Léger" --dep 94
+python run_commune.py --insee 94070
 ```
 
-## Utilisation
+Les homonymes sont départagés avec `--dep` ou `--insee`. L'analyse seule (sans maquette) se lance avec `python solaire.py <commune>`.
 
-```
-python santeny_solaire.py --limit 50          # test rapide
-python santeny_solaire.py --out resultats     # run complet
-python santeny_solaire.py --mns mns.tif       # avec un MNS local
-```
+## Méthode
 
-Options : `--all-usages`, `--no-shade`, `--limit N`, `--cache DIR`.
+1. Contour communal (geo.api.gouv.fr) et bâtiments (BD TOPO, WFS Géoplateforme IGN).
+2. Modèle numérique de surface LiDAR HD de l'IGN (MNS, 0,5 m), téléchargé par tuiles WMS. Il contient les toits, les arbres et le bâti voisin.
+3. Pente, orientation et position de chaque pan de toit, calculées sur le MNS.
+4. Rendement (kWh/kWc/an) interpolé sur une grille PVGIS (inclinaison x azimut, pertes système 14 % par défaut, option `--loss`).
+5. **Ombrage par pan** :
+   - profil d'horizon complet (72 azimuts, jusqu'à 150 m) depuis le centre du pan, séparant le bâti (BD TOPO, opaque) du reste (arbres) ;
+   - course du soleil sur 12 jours types, toutes les 15 minutes, pondérée par le rayonnement direct mensuel PVGIS (ciel clair recalé) ;
+   - les arbres laissent passer une partie du soleil, davantage hors feuillage (55 % de novembre à mars, 15 % de mai à septembre) ;
+   - le rayonnement diffus (part mensuelle PVGIS) est réduit selon la part de ciel masquée.
+6. Production : surface équipable (60 % d'un pan, 45 % d'un toit plat) à 5 m² par kWc. Seuls les pans à 85 % ou plus du rendement optimal comptent dans la production potentielle.
 
-Si le téléchargement WCS du MNS échoue, récupérer les dalles sur https://geoservices.ign.fr/lidarhd et passer le GeoTIFF avec `--mns`.
+## Sorties de l'analyse (`resultats/<INSEE>/`)
 
-## Sorties
-
-- `pans.csv` : un pan de toit par ligne (azimut, pente, surface, rendement, production).
+- `pans.csv` : un pan de toit par ligne (azimut, pente, surface, ombrage bâti / arbres, rendement, production).
 - `batiments.csv` : classement par bâtiment.
 - `batiments.gpkg` : couche à ouvrir dans QGIS.
-
-## Test
-
-`tests/test_synth.py` valide le calcul pente/orientation/ombrage sur un toit synthétique (sans réseau).
-
-## Limites
-
-Estimation indicative. Le MNS ne capte pas les obstacles proches (cheminées, velux). Charpente, PLU et abords protégés sont à vérifier. Le nom de la couche BD TOPO et l'identifiant WCS peuvent évoluer côté IGN (constantes en tête de script).
+- `meta.json` : synthèse de la commune.
 
 ## Maquette 3D
 
-```
-python viewer3d.py --res resultats --out santeny_3d.html
-```
+`viewer3d.py` écrit `communes/<INSEE>.html` : page autonome (three.js) avec bâtiments extrudés sur l'orthophoto IGN, noms de rues, adresses (Base Adresse Nationale), recherche d'adresse, couleur selon le rendement ou la production, fiche par bâtiment, navigation adaptée au pavé tactile. `site_index.py` régénère `index.html`.
 
-Génère une page HTML autonome (three.js) : bâtiments BD TOPO extrudés sur l'orthophoto IGN, toits colorés selon le rendement relatif, filtre par seuil, classement cliquable et fiche par bâtiment. `santeny_3d.html` est déjà généré dans le dépôt.
+## Test
+
+`python tests/test_synth.py` valide pente, orientation et ombrage (arbre contre bâti) sur un toit synthétique, sans réseau (les données climatiques utilisées sont des valeurs de repli).
+
+## Limites
+
+Estimation indicative.
+- L'ombrage ne distingue pas les essences : tout obstacle non bâti est traité comme un arbre feuillu moyen. Un conifère ou un relief proche sont sous-estimés ou surestimés selon le cas.
+- Le MNS ne capte pas les obstacles proches du toit (cheminées, velux, lucarnes) ni les arbres plantés ou coupés depuis le survol.
+- Le rendement affiché est celui du **meilleur pan** de chaque bâtiment, relatif au meilleur point de la grille PVGIS.
+- Charpente, PLU et abords protégés sont à vérifier. Le nom de la couche BD TOPO et celui de la couche WMS peuvent évoluer côté IGN (constantes en tête de `solaire.py`).
+- Couverture LiDAR HD et BD TOPO : France métropolitaine uniquement.

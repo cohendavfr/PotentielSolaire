@@ -1,16 +1,19 @@
 #!/usr/bin/env python3
 """
-Génère une maquette 3D interactive (HTML autonome) de Santeny à partir de resultats/batiments.csv.
+Génère la maquette 3D interactive (HTML autonome) d'une commune analysée par solaire.py.
 
-  python viewer3d.py --res resultats --out santeny_3d.html
+  python viewer3d.py Santeny                 # lit resultats/94070/
+  python viewer3d.py --res resultats/94070
 
-Les bâtiments de la BD TOPO sont extrudés à leur hauteur, posés sur l'orthophoto IGN.
-Les bâtiments analysés sont colorés selon leur meilleur rendement relatif ; les autres sont gris.
+Écrit communes/<INSEE>.html (+ communes/<INSEE>.json) et régénère index.html (choix de la ville).
+Les bâtiments de la BD TOPO sont extrudés à leur hauteur, posés sur l'orthophoto IGN, avec les
+noms de rues et les adresses de la Base Adresse Nationale.
 """
 import argparse
 import base64
 import json
 import time
+from io import StringIO
 from pathlib import Path
 
 import geopandas as gpd
@@ -19,17 +22,20 @@ import requests
 import shapely
 from shapely.ops import linemerge, unary_union
 
-import santeny_solaire as ss
+import solaire as ss
+import site_index
 
 ORTHO_LAYER = "ORTHOIMAGERY.ORTHOPHOTOS"
-ORTHO_PX = 3000
+ORTHO_PX = 4800  # côté le plus long, en pixels (max 5000 pour le WMS)
+BAL_URL = "https://plateforme.adresse.data.gouv.fr/ban/communes/{}/download/csv-bal/adresses"
 
 
 def fetch_ortho(bounds):
     minx, miny, maxx, maxy = bounds
     w, h = maxx - minx, maxy - miny
-    px_w = ORTHO_PX
-    px_h = int(ORTHO_PX * h / w)
+    px_w = ORTHO_PX if w >= h else int(ORTHO_PX * w / h)
+    px_h = int(ORTHO_PX * h / w) if w >= h else ORTHO_PX
+    px_w, px_h = min(px_w, 5000), min(px_h, 5000)
     params = dict(
         SERVICE="WMS", VERSION="1.3.0", REQUEST="GetMap", LAYERS=ORTHO_LAYER, STYLES="",
         CRS=ss.CRS, BBOX=f"{minx},{miny},{maxx},{maxy}", WIDTH=px_w, HEIGHT=px_h,
@@ -44,14 +50,10 @@ def fetch_ortho(bounds):
     return base64.b64encode(r.content).decode()
 
 
-BAL_URL = "https://plateforme.adresse.data.gouv.fr/ban/communes/{}/download/csv-bal/adresses"
-
-
-def fetch_addresses():
+def fetch_addresses(insee):
     """Points adresse de la Base Adresse Nationale (Lambert-93)."""
-    r = requests.get(BAL_URL.format(ss.INSEE), timeout=120)
+    r = requests.get(BAL_URL.format(insee), timeout=120)
     r.raise_for_status()
-    from io import StringIO
     df = pd.read_csv(StringIO(r.text), sep=";", dtype=str)
     df = df.dropna(subset=["x", "y", "numero", "voie_nom"])
     df["x"], df["y"] = df.x.astype(float), df.y.astype(float)
@@ -63,7 +65,7 @@ def fetch_addresses():
 
 
 def fetch_roads(bounds):
-    """Tronçons de route nommés (BD TOPO) -> ancres d'étiquettes (point + tangente)."""
+    """Tronçons de route nommés (BD TOPO)."""
     minx, miny, maxx, maxy = bounds
     r = requests.get(ss.WFS_URL, params=dict(
         SERVICE="WFS", VERSION="2.0.0", REQUEST="GetFeature", TYPENAMES="BDTOPO_V3:troncon_de_route",
@@ -72,10 +74,11 @@ def fetch_roads(bounds):
     r.raise_for_status()
     feats = r.json().get("features", [])
     if not feats:
-        return []
+        return None
     g = gpd.GeoDataFrame.from_features(feats, crs=ss.CRS)
     g["geometry"] = g.geometry.apply(shapely.force_2d)
-    g = g[g.get("position_par_rapport_au_sol", "0").astype(str) == "0"] if "position_par_rapport_au_sol" in g else g
+    if "position_par_rapport_au_sol" in g:
+        g = g[g.position_par_rapport_au_sol.astype(str) == "0"]
 
     def name(row):
         for k in ("nom_voie_ban_gauche", "nom_voie_ban_droite", "nom_collaboratif_gauche", "nom_collaboratif_droite"):
@@ -117,23 +120,20 @@ def road_anchors(roads, bounds, cx, cy, spacing=220.0):
 
 
 def rings(geom):
-    polys = [geom] if geom.geom_type == "Polygon" else list(geom.geoms)
-    return polys
+    return [geom] if geom.geom_type == "Polygon" else list(geom.geoms)
 
 
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--res", default="resultats")
-    ap.add_argument("--out", default="santeny_3d.html")
-    args = ap.parse_args()
+def build(res_dir, out_html=None, site_dir=".", home="../index.html"):
+    res_dir, site_dir = Path(res_dir), Path(site_dir)
+    meta = json.loads((res_dir / "meta.json").read_text())
+    insee = meta["insee"]
+    out_html = Path(out_html) if out_html else site_dir / "communes" / f"{insee}.html"
+    out_html.parent.mkdir(parents=True, exist_ok=True)
 
-    commune = ss.fetch_commune()
-    cgeom = commune.geometry.iloc[0]
+    cgeom = ss.fetch_commune(insee).geometry.iloc[0]
     blds = ss.fetch_buildings(cgeom)
-    res = pd.read_csv(Path(args.res) / "batiments.csv")
-    key = "cleabs" if "cleabs" in blds else None
-    blds["bat_id"] = blds[key] if key else blds.index
-    res = res.set_index("bat_id")
+    res = pd.read_csv(res_dir / "batiments.csv").set_index("bat_id")
+    blds["bat_id"] = blds["cleabs"] if "cleabs" in blds else blds.index
 
     minx, miny, maxx, maxy = cgeom.bounds
     pad = 80
@@ -143,13 +143,18 @@ def main():
     def local(coords):
         return [[round(x - cx, 1), round(y - cy, 1)] for x, y in coords][:-1]
 
-    addr = fetch_addresses()
-    near = gpd.sjoin_nearest(addr, blds[["geometry"]], how="left", max_distance=25)
-    near = near[~near.index.duplicated()]
-    by_bld = {}
-    for pi, row in near.iterrows():
-        if pd.notna(row.get("index_right")):
-            by_bld.setdefault(int(row.index_right), []).append(row.label)
+    try:
+        addr = fetch_addresses(insee)
+    except Exception as e:
+        print(f"Adresses indisponibles ({e})")
+        addr = gpd.GeoDataFrame({"label": []}, geometry=[], crs=ss.CRS)
+    by_bld, near = {}, None
+    if len(addr):
+        near = gpd.sjoin_nearest(addr, blds[["geometry"]], how="left", max_distance=25)
+        near = near[~near.index.duplicated()]
+        for pi, row in near.iterrows():
+            if pd.notna(row.get("index_right")):
+                by_bld.setdefault(int(row.index_right), []).append(row.label)
 
     out, parts = [], {}
     for bi, b in blds.iterrows():
@@ -169,28 +174,59 @@ def main():
             if r is not None:
                 d.update(ratio=float(r.meilleur_ratio), az=float(r.meilleur_az),
                          tilt=float(r.meilleure_pente), y=float(r.yield_kwh_kwp),
-                         kwh=float(r.kwh_an_bons_pans), shade=float(r.shade_loss))
+                         kwh=float(r.kwh_an_bons_pans), kw=float(r.kwp_bons_pans),
+                         shade=float(r.shade_loss), sb=float(r.shade_bati), sa=float(r.shade_arbres))
             out.append(d)
 
     pts = []
-    for pi, a in addr.iterrows():
-        bi = near.loc[pi, "index_right"] if pi in near.index else None
-        mi = parts[int(bi)][0] if pd.notna(bi) and int(bi) in parts else -1
-        pts.append([a.label, round(a.geometry.x - cx, 1), round(a.geometry.y - cy, 1), mi])
+    if near is not None:
+        for pi, a in addr.iterrows():
+            bi = near.loc[pi, "index_right"] if pi in near.index else None
+            mi = parts[int(bi)][0] if pd.notna(bi) and int(bi) in parts else -1
+            pts.append([a.label, round(a.geometry.x - cx, 1), round(a.geometry.y - cy, 1), mi])
 
-    roads = fetch_roads(cgeom.buffer(120).bounds)
-    streets = road_anchors(roads, bounds, cx, cy) if len(roads) else []
+    try:
+        roads = fetch_roads(cgeom.buffer(120).bounds)
+        streets = road_anchors(roads, bounds, cx, cy) if roads is not None and len(roads) else []
+    except Exception as e:
+        print(f"Rues indisponibles ({e})")
+        streets = []
 
     data = dict(
         w=round(bounds[2] - bounds[0], 1), h=round(bounds[3] - bounds[1], 1),
+        meta=dict(nom=meta["nom"], insee=insee),
         buildings=out, addresses=pts, streets=streets)
     ortho = fetch_ortho(bounds)
     tpl = Path(__file__).with_name("viewer_template.html").read_text()
-    html = tpl.replace("__DATA__", json.dumps(data, separators=(",", ":"))).replace("__ORTHO__", ortho)
-    Path(args.out).write_text(html)
+    html = (tpl.replace("__DATA__", json.dumps(data, separators=(",", ":")))
+               .replace("__ORTHO__", ortho)
+               .replace("__NAME__", meta["nom"]).replace("__HOME__", home))
+    out_html.write_text(html)
     n = sum(1 for d in out if "ratio" in d)
     print(f"{len(pts)} adresses, {len(streets)} étiquettes de rues, {sum(1 for d in out if 'a' in d)} bâtiments adressés")
-    print(f"{args.out} : {len(out)} bâtiments dont {n} analysés ({Path(args.out).stat().st_size/1e6:.1f} Mo)")
+    print(f"{out_html} : {len(out)} bâtiments dont {n} analysés ({out_html.stat().st_size/1e6:.1f} Mo)")
+
+    meta["fichier"] = out_html.name
+    (out_html.parent / f"{insee}.json").write_text(json.dumps(meta, ensure_ascii=False))
+    site_index.build_index(site_dir)
+    return out_html
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
+    ap.add_argument("commune", nargs="?", help="nom ou code INSEE (lit resultats/<INSEE>)")
+    ap.add_argument("--insee")
+    ap.add_argument("--dep")
+    ap.add_argument("--res", help="dossier de résultats (défaut : resultats/<INSEE>)")
+    ap.add_argument("--out", help="fichier HTML de sortie (défaut : communes/<INSEE>.html)")
+    ap.add_argument("--site", default=".", help="racine du site (index.html, communes/)")
+    args = ap.parse_args(argv)
+    if args.res:
+        res = Path(args.res)
+    else:
+        c = ss.resolve_commune(args.commune, args.insee, args.dep)
+        res = Path("resultats") / c["code"]
+    return build(res, args.out, args.site)
 
 
 if __name__ == "__main__":

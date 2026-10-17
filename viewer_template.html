@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Santeny solaire 3D</title>
+<title>__NAME__ solaire 3D</title>
 <style>
   :root{--bg:#f4f1ea;--panel:#fffdf8;--ink:#1d2a2f;--mute:#6b7478;--line:#ddd6c6;--acc:#d9822b}
   @media (prefers-color-scheme:dark){:root{--bg:#14191b;--panel:#1d2427;--ink:#e8e6df;--mute:#97a0a3;--line:#323c40;--acc:#f0a050}}
@@ -59,11 +59,17 @@
 <div id="labels"></div>
 
 <div class="panel" id="side">
-  <div><h1>Santeny · potentiel solaire</h1>
-  <p class="sub">Toits résidentiels classés par rendement relatif (orientation, pente, ombrage). Estimation indicative.</p></div>
+  <div><h1><span id="cname"></span> · potentiel solaire</h1>
+  <p class="sub"><a href="__HOME__" style="color:var(--acc)">← Choisir une autre ville</a></p>
+  <p class="sub" style="margin-top:4px">Toits résidentiels : orientation, pente, ombrage des arbres et du bâti. Estimation indicative.</p></div>
   <div id="res"><input id="q" type="search" placeholder="Chercher une adresse…" autocomplete="off"><div id="sugg"></div></div>
-  <div><div class="bar"></div><div class="scale"><span>50 %</span><span>rendement optimal</span><span>100 %</span></div></div>
-  <label>Seuil mini <input type="range" id="min" min="0" max="100" value="0" style="flex:1"><b id="minv">0 %</b></label>
+  <label>Couleur selon
+    <select id="metric" style="flex:1;padding:5px;border-radius:6px;border:1px solid var(--line);background:var(--bg);color:var(--ink);font:inherit">
+      <option value="yield">Rendement du meilleur pan (kWh/kWc/an)</option>
+      <option value="prod">Production potentielle (kWh/an)</option>
+    </select></label>
+  <div><div class="bar" id="bar"></div><div class="scale"><span id="s0"></span><span id="s1"></span><span id="s2"></span></div></div>
+  <label>Rendement relatif mini <input type="range" id="min" min="0" max="100" value="0" style="flex:1"><b id="minv">0 %</b></label>
   <label><span>Noms de rues</span><input type="checkbox" id="streets" checked></label>
   <label><span>Numéros</span><input type="checkbox" id="nums" checked></label>
   <label><span>Bâtiments non analysés</span><input type="checkbox" id="others" checked></label>
@@ -136,7 +142,30 @@ function ramp(r){
   }
   return new THREE.Color(...stops[stops.length-1][1].map(v=>v/255));
 }
+const rampT = t => ramp(0.5 + 0.5 * t);
 const GREY = new THREE.Color(dark ? 0x56606a : 0xb9b4a8);
+const NONE = new THREE.Color(dark ? 0x6a5a4e : 0xc9b8a6);   // analysé mais aucun pan exploitable
+let metric = 'yield', lo = 0, hi = 1;
+const mval = b => metric === 'yield' ? b.y : Math.log10(Math.max(b.kwh, 1));
+const quant = (arr, p) => arr[Math.floor(p * (arr.length - 1))];
+const fmt = n => n >= 1000 ? (n / 1000).toLocaleString('fr-FR', {maximumFractionDigits: 1}) + ' MWh' : Math.round(n) + ' kWh';
+function setScale(){
+  const v = DATA.buildings.filter(b => b.ratio !== undefined && (metric === 'yield' || b.kwh > 0)).map(mval).sort((a, b) => a - b);
+  lo = quant(v, 0.03); hi = quant(v, 0.97);
+  if (hi - lo < 1e-6) hi = lo + 1;
+  const g = [0, .25, .5, .75, 1].map(t => '#' + rampT(t).getHexString()).join(',');
+  $('bar').style.background = `linear-gradient(90deg,${g})`;
+  if (metric === 'yield') {
+    $('s0').textContent = Math.round(lo / 10) * 10; $('s1').textContent = 'kWh/kWc/an'; $('s2').textContent = Math.round(hi / 10) * 10;
+  } else {
+    $('s0').textContent = fmt(Math.pow(10, lo)); $('s1').textContent = 'kWh/an (échelle log.)'; $('s2').textContent = fmt(Math.pow(10, hi));
+  }
+}
+function roofColor(b){
+  if (b.ratio === undefined) return GREY;
+  if (metric === 'prod' && b.kwh <= 0) return NONE;
+  return rampT(Math.min(1, Math.max(0, (mval(b) - lo) / (hi - lo))));
+}
 const WALL = new THREE.Color(dark ? 0x8a8f94 : 0xf2eee4);
 
 const meshes = [];
@@ -146,16 +175,25 @@ DATA.buildings.forEach((b, idx) => {
   const geo = new THREE.ExtrudeGeometry(shape, {depth: b.h, bevelEnabled: false});
   geo.rotateX(-Math.PI / 2);
   const analysed = b.ratio !== undefined;
-  const roof = new THREE.MeshLambertMaterial({color: analysed ? ramp(b.ratio) : GREY});
+  const roof = new THREE.MeshLambertMaterial({color: GREY});
   const wall = new THREE.MeshLambertMaterial({color: WALL});
   const m = new THREE.Mesh(geo, [roof, wall]);
   m.userData = {b, analysed, idx};
   scene.add(m); meshes.push(m);
 });
 
-const ranked = meshes.filter(m => m.userData.analysed)
-  .sort((a, b) => b.userData.b.ratio - a.userData.b.ratio || b.userData.b.kwh - a.userData.b.kwh);
-ranked.forEach((m, i) => m.userData.rank = i + 1);
+const analysedMeshes = meshes.filter(m => m.userData.analysed);
+let ranked = analysedMeshes.slice();
+function setMetric(k){
+  metric = k; setScale();
+  ranked = analysedMeshes.slice().sort(k === 'yield'
+    ? (a, b) => b.userData.b.y - a.userData.b.y || b.userData.b.kwh - a.userData.b.kwh
+    : (a, b) => b.userData.b.kwh - a.userData.b.kwh || b.userData.b.y - a.userData.b.y);
+  ranked.forEach((m, i) => m.userData.rank = i + 1);
+  analysedMeshes.forEach(m => m.material[0].color.copy(roofColor(m.userData.b)));
+  if (typeof applyFilters === 'function' && selected) select(selected, false);
+  if (typeof applyFilters === 'function') applyFilters();
+}
 
 const topEl = $('top');
 function compass(az){ return ['N','NE','E','SE','S','SO','O','NO'][Math.round(((az % 360) + 360) % 360 / 45) % 8]; }
@@ -165,9 +203,9 @@ function renderTop(){
   const list = ranked.filter(m => m.userData.b.ratio >= min);
   topEl.innerHTML = `<p class="sub" style="margin-bottom:6px">${list.length} bâtiments · top 25</p>` +
     list.slice(0, 25).map(m => {
-      const b = m.userData.b, c = '#' + ramp(b.ratio).getHexString();
+      const b = m.userData.b, c = '#' + roofColor(b).getHexString();
       return `<div class="row" data-i="${m.userData.idx}"><i class="dot" style="background:${c}"></i><b>#${m.userData.rank}</b>
-        <span>${Math.round(b.ratio*100)} %</span><span class="meta">${compass(b.az)} · ${Math.round(b.tilt)}° · ${Math.round(b.kwh/1000)} MWh</span>
+        <span>${Math.round(b.y)} kWh/kWc</span><span class="meta">${compass(b.az)} · ${Math.round(b.tilt)}° · ${fmt(b.kwh)}/an</span>
         ${b.a ? `<span class="ad">${esc(b.a)}</span>` : ''}</div>`;
     }).join('');
 }
@@ -184,6 +222,7 @@ function applyFilters(){
   renderTop();
 }
 ['min','others'].forEach(id => $(id).addEventListener('input', applyFilters));
+$('metric').addEventListener('input', e => setMetric(e.target.value));
 $('photo').addEventListener('input', e => { ground.visible = e.target.checked; });
 
 // ---------------------------------------------------------------- sélection
@@ -203,7 +242,10 @@ function select(m, fly){
        <dt>Orientation</dt><dd>${Math.round(b.az)}° (${compass(b.az)})</dd>
        <dt>Pente</dt><dd>${Math.round(b.tilt)}°</dd>
        <dt>Rendement</dt><dd>${Math.round(b.y)} kWh/kWc/an</dd>
-       <dt>Ombrage lointain</dt><dd>${Math.round(b.shade*100)} %</dd>
+       <dt>Ombrage du pan</dt><dd>${(b.shade*100).toFixed(1)} %</dd>
+       <dt>· dont arbres</dt><dd>${(b.sa*100).toFixed(1)} %</dd>
+       <dt>· dont bâti</dt><dd>${(b.sb*100).toFixed(1)} %</dd>
+       <dt>Puissance (bons pans)</dt><dd>${(b.kw).toFixed(1)} kWc</dd>
        <dt>Production (bons pans)</dt><dd>${Math.round(b.kwh).toLocaleString('fr-FR')} kWh/an</dd>
        <dt>Hauteur</dt><dd>${b.h} m</dd></dl>`
     : `<h2>Bâtiment non analysé</h2>${ad}<dl><dt>Hauteur</dt><dd>${b.h} m</dd></dl>`;
@@ -458,8 +500,9 @@ addEventListener('resize', resize); resize();
   camera.position.set(c.x, home.dist * 0.7, c.z + home.dist * 0.7);
   camera.lookAt(c);
 })();
+$('cname').textContent = DATA.meta.nom;
 setDrag(false);
-applyFilters();
+setMetric('yield');
 (function loop(){ stepAnim(); controls.update(); renderer.render(scene, camera); updateLabels(); requestAnimationFrame(loop); })();
 </script>
 </body>
