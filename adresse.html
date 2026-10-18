@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Potentiel solaire d'une adresse</title>
+<title>PotentielSolaire · adresse</title>
 <link rel="stylesheet" href="assets/viewer.css">
 <style>
   #abar{top:16px;left:340px;right:16px;max-width:560px;padding:10px 12px;z-index:9}
@@ -160,7 +160,7 @@ async function run(lon, lat, label, preferId) {
     history.replaceState(null, '', '?' + new URLSearchParams({lon: lon.toFixed(6), lat: lat.toFixed(6), label, ...(preferId ? {bid: preferId} : {})}));
     window.V = startViewer({
       data: res, ortho: orthoBlob ? URL.createObjectURL(orthoBlob) : null, title: label, mode: 'address', focus: res.focus,
-      home: 'index.html', homeLabel: '← Toits solaires',
+      home: 'index.html', homeLabel: '← PotentielSolaire',
       subtitle: `Rendement optimal ${res.meta.rendement_optimal} kWh/kWc/an à cet endroit (PVGIS), part de diffus ${Math.round(res.meta.diffus * 100)} %. Estimation indicative.`,
       onAnalyse: id => { location.search = '?' + new URLSearchParams({lon, lat, label, bid: id}); },
     });

@@ -20,11 +20,6 @@ def build_index(site_dir="."):
     html = (tpl.replace("__COMMUNES__", json.dumps(communes, ensure_ascii=False))
                .replace("__REPO__", REPO))
     (site / "index.html").write_text(html)
-    # ancien lien direct vers la maquette de Santeny
-    if (site / "communes" / "94070.html").exists():
-        (site / "santeny_3d.html").write_text(
-            '<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="0;url=communes/94070.html">'
-            '<a href="communes/94070.html">Santeny</a>')
     return len(communes)
 
 
