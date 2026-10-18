@@ -4,7 +4,7 @@ import json
 import os
 from pathlib import Path
 
-REPO = os.environ.get("GITHUB_REPOSITORY", "cohendavfr/santeny-solaire")
+REPO = os.environ.get("GITHUB_REPOSITORY", "cohendavfr/PotentielSolaire")
 
 
 def build_index(site_dir="."):

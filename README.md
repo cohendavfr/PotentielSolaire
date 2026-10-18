@@ -1,8 +1,8 @@
-# Toits solaires 3D
+# PotentielSolaire
 
 Classement des toits d'une commune française selon leur potentiel photovoltaïque (orientation, pente, ombrage des arbres et du bâti, production estimée), avec une maquette 3D interactive.
 
-Site : https://cohendavfr.github.io/santeny-solaire/ (Santeny, Val-de-Marne, est déjà analysée).
+Site : https://cohendavfr.github.io/PotentielSolaire/ (Santeny, Val-de-Marne, est déjà analysée).
 
 ## Saisir une adresse
 
