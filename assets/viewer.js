@@ -333,6 +333,7 @@ function startViewer(opts) {
   //    (arrêté du 1er juin 2026, JO du 4 juin 2026) ; la prime à l'autoconsommation a été supprimée ;
   //  - coût de l'installation : ordre de grandeur 2026 pour du résidentiel posé, TTC (TVA 5,5 % jusqu'à 9 kWc) :
   //    forfait + prix par kWc, d'où environ 7 400 € pour 3 kWc, 11 400 € pour 6 kWc, 15 500 € pour 9 kWc.
+  const DEFAULT_SHARE = 0.6;                          // part du maximum proposée par défaut
   const MODULE_KWC = 0.43;                            // module de 430 Wc
   const ECO0 = {prixKwh: 0.2001, surplus: 0.011, conso: 5000, scAuto: true, sc: 40, fixe: 3300, parKwc: 1350, prime: 0};
   const ECO = Object.assign({}, ECO0);
@@ -341,7 +342,7 @@ function startViewer(opts) {
   const equip = {};                                   // bâtiment -> {pan: nombre de panneaux retenus}
   const euro = n => Math.round(n).toLocaleString('fr-FR') + ' €';
   const equipOf = bi => {
-    if (!equip[bi]) { equip[bi] = {}; B[bi].pans.forEach((p, k) => { equip[bi][k] = (p.ratio >= 0.85 && p.n > 0) ? p.n : 0; }); }
+    if (!equip[bi]) { equip[bi] = {}; B[bi].pans.forEach((p, k) => { equip[bi][k] = (p.ratio >= 0.85 && p.n > 0) ? Math.max(1, Math.round(DEFAULT_SHARE * p.n)) : 0; }); }
     return equip[bi];
   };
   function bilan(bi) {
@@ -443,7 +444,7 @@ function startViewer(opts) {
       <dt>Panneaux possibles (tous pans)</dt><dd>${totN}</dd><dt>Hauteur</dt><dd>${b.h} m</dd></dl>
       ${detail}
       <table class="pans"><thead><tr><th>Pan</th><th>Orient. · pente</th><th title="Nombre de panneaux retenus / maximum possible">Panneaux</th><th>Ombre</th><th>kWh/kWc</th><th title="Production des panneaux retenus">kWh/an</th></tr></thead><tbody>${rows}</tbody></table>
-      <p class="note">Modifiez le nombre de panneaux de chaque pan (maximum = surface équipable, 90 % du pan). Par défaut, le maximum est retenu sur les pans à 85 % ou plus du rendement optimal. Cliquez un pan pour le détail.</p>
+      <p class="note">Modifiez le nombre de panneaux de chaque pan (maximum = surface équipable, 85 % du pan). Par défaut, 60 % du maximum est retenu sur les pans à 85 % ou plus du rendement optimal. Cliquez un pan pour le détail.</p>
       <div id="bilanBox">${bilanHtml(selB)}</div>`;
     wireEco(); wireSheet();
   }
