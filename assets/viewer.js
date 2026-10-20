@@ -9,6 +9,7 @@
  */
 function startViewer(opts) {
   const DATA = opts.data, ORTHO = opts.ortho;
+  document.body.classList.add('viewer-on');
   const MODE = opts.mode || 'commune';
   const $ = id => document.getElementById(id);
   const esc = s => String(s).replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
@@ -20,6 +21,8 @@ function startViewer(opts) {
   // ------------------------------------------------------------------ interface
   document.body.insertAdjacentHTML('beforeend', `
   <canvas id="c" tabindex="0"></canvas><div id="labels"></div><div id="msg"></div>
+  <button id="menuBtn" aria-label="Options">☰</button>
+  ${MODE === 'commune' ? `<div id="chip">${esc(opts.title || '')}</div>` : ''}
   <div class="panel" id="side">
     <div><h1>${esc(opts.title || '')}</h1>
       ${opts.home ? `<p class="sub"><a href="${opts.home}" style="color:var(--acc)">${esc(opts.homeLabel || '← Choisir une autre ville')}</a></p>` : ''}
@@ -61,6 +64,7 @@ function startViewer(opts) {
   const camera = new THREE.PerspectiveCamera(45, 1, 1, 14000);
   const controls = new THREE.OrbitControls(camera, canvas);
   controls.enableDamping = false; controls.enableZoom = false; controls.enableKeys = false;
+  controls.touches = {ONE: THREE.TOUCH.ROTATE, TWO: null};   // les deux doigts sont gérés plus bas
   controls.screenSpacePanning = false; controls.maxPolarAngle = Math.PI * 0.49; controls.minPolarAngle = 0.02;
   scene.add(new THREE.HemisphereLight(0xffffff, 0x667788, 0.8));
   const sunL = new THREE.DirectionalLight(0xfff3dd, 0.85);
@@ -384,6 +388,7 @@ function startViewer(opts) {
     const box = $('bilanBox'); if (!box || selB < 0) return;
     info.dataset.ecoOpen = $('ecoDet') && $('ecoDet').open ? '1' : '';
     box.innerHTML = bilanHtml(selB);
+    if ($('peekSum')) $('peekSum').textContent = peekText(selB);
     wireEco();
   }
   function wireEco() {
@@ -393,15 +398,26 @@ function startViewer(opts) {
     if ($('e-reset')) $('e-reset').onclick = () => { Object.assign(ECO, ECO0); saveEco(); refreshBilan(); };
   }
 
+  let infoPeek = true;                                 // mobile : fiche réduite à un résumé
+  const isMob = () => matchMedia('(max-width:760px)').matches;
+  const ihead = '<div class="ihead"><button id="infoToggle" class="ibtn" aria-label="Agrandir / réduire">▴</button><button id="infoClose" class="ibtn" aria-label="Fermer">✕</button></div>';
+  function wireSheet() {
+    info.classList.toggle('peek', isMob() && infoPeek);
+    $('infoToggle').onclick = () => { infoPeek = !infoPeek; info.classList.toggle('peek', isMob() && infoPeek); $('infoToggle').textContent = infoPeek ? '▴' : '▾'; };
+    $('infoClose').onclick = () => select(-1, -1);
+    $('infoToggle').textContent = infoPeek ? '▴' : '▾';
+  }
+  const peekText = bi => { const r = bilan(bi); return r.n ? `${r.n} panneaux · ${r.kwc.toFixed(1)} kWc · gain ${euro(r.eco)}/an` : `${B[bi].pans.length} pans · touchez ▴ pour le détail`; };
   function showInfo() {
     if (selB < 0) { info.style.display = 'none'; return; }
     const b = B[selB];
     info.style.display = 'block';
     const ad = b.a ? `<p class="ad">${esc(b.a)}</p>` : '';
     if (!b.pans || !b.pans.length) {
-      info.innerHTML = `<h2>Bâtiment non analysé</h2>${ad}<p class="note">Hauteur ${b.h} m.${opts.onAnalyse ? '' : ' Pas de pan de toit exploitable (surface trop petite ou LiDAR indisponible).'}</p>
+      info.innerHTML = `${ihead}<h2>Bâtiment non analysé</h2>${ad}<p class="note">Hauteur ${b.h} m.${opts.onAnalyse ? '' : ' Pas de pan de toit exploitable (surface trop petite ou LiDAR indisponible).'}</p>
         ${opts.onAnalyse && b.id ? '<button id="anaBtn" class="btn">Analyser ce bâtiment</button>' : ''}`;
       if ($('anaBtn')) $('anaBtn').onclick = () => opts.onAnalyse(b.id);
+      wireSheet(); info.classList.remove('peek');
       return;
     }
     const set = equipOf(selB);
@@ -422,14 +438,14 @@ function startViewer(opts) {
         <dt>· dont bâti</dt><dd>${(p.sb * 100).toFixed(1)} %</dd></dl>`;
     }
     const totN = b.pans.reduce((s, p) => s + p.n, 0);
-    info.innerHTML = `<h2>${MODE === 'commune' ? 'Bâtiment #' + b.rank : 'Bâtiment analysé'} · ${b.pans.length} pan${b.pans.length > 1 ? 's' : ''}</h2>${ad}
+    info.innerHTML = `${ihead}<h2>${MODE === 'commune' ? 'Bâtiment #' + b.rank : 'Bâtiment analysé'} · ${b.pans.length} pan${b.pans.length > 1 ? 's' : ''}</h2>${ad}<p class="peeksum" id="peekSum">${peekText(selB)}</p>
       <dl><dt>Meilleur pan</dt><dd>${Math.round(b.y)} kWh/kWc/an (${Math.round(b.ratio * 100)} %)</dd>
       <dt>Panneaux possibles (tous pans)</dt><dd>${totN}</dd><dt>Hauteur</dt><dd>${b.h} m</dd></dl>
       ${detail}
       <table class="pans"><thead><tr><th>Pan</th><th>Orient. · pente</th><th title="Nombre de panneaux retenus / maximum possible">Panneaux</th><th>Ombre</th><th>kWh/kWc</th><th title="Production des panneaux retenus">kWh/an</th></tr></thead><tbody>${rows}</tbody></table>
       <p class="note">Modifiez le nombre de panneaux de chaque pan (maximum = surface équipable, 90 % du pan). Par défaut, le maximum est retenu sur les pans à 85 % ou plus du rendement optimal. Cliquez un pan pour le détail.</p>
       <div id="bilanBox">${bilanHtml(selB)}</div>`;
-    wireEco();
+    wireEco(); wireSheet();
   }
   info.addEventListener('click', e => {
     if (e.target.closest('input.eq')) return;           // la saisie du nombre de panneaux ne sélectionne pas le pan
@@ -452,7 +468,11 @@ function startViewer(opts) {
   // pastilles numérotées des pans du bâtiment sélectionné
   const layer = $('labels');
   let panEls = [];
+  $('menuBtn').onclick = () => document.body.classList.toggle('side-open');
+  canvas.addEventListener('pointerdown', () => document.body.classList.remove('side-open'));   // toucher la carte referme le menu
   function select(bi, pk, fly) {
+    if (bi >= 0) document.body.classList.remove('side-open');
+    if (bi !== selB) infoPeek = true;
     selB = bi; selP = pk === undefined ? -1 : pk;
     panEls.forEach(e => e.el.remove()); panEls = [];
     if (bi >= 0 && B[bi].pans) B[bi].pans.forEach((p, k) => {
@@ -503,6 +523,7 @@ function startViewer(opts) {
     dragPan = p;
     controls.mouseButtons.LEFT = p ? THREE.MOUSE.PAN : THREE.MOUSE.ROTATE;
     controls.mouseButtons.RIGHT = p ? THREE.MOUSE.ROTATE : THREE.MOUSE.PAN;
+    controls.touches.ONE = p ? THREE.TOUCH.PAN : THREE.TOUCH.ROTATE;
     modeBtn.textContent = p ? 'Déplacer' : 'Tourner'; modeBtn.classList.toggle('on', p); hint();
   }
   modeBtn.addEventListener('click', () => setDrag(!dragPan));
@@ -512,6 +533,23 @@ function startViewer(opts) {
       : `<b>Souris</b> : molette = <b>zoom</b> · glisser = ${dragPan ? 'déplacer' : 'tourner'} · clic droit = ${dragPan ? 'tourner' : 'déplacer'}.<br>Clavier : flèches · + / − · Q / E · R nord · T dessus. <a href="#" id="swm" style="color:var(--acc)">J'utilise un pavé tactile</a>`;
     $('swm').addEventListener('click', e => { e.preventDefault(); padMode = !padMode; hint(); });
   }
+  // deux doigts : pincer = zoom, glisser = déplacer, torsion = tourner
+  let tp = null;
+  const two = ts => { const a = ts[0], b = ts[1]; return {d: Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY), x: (a.clientX + b.clientX) / 2, y: (a.clientY + b.clientY) / 2, r: Math.atan2(b.clientY - a.clientY, b.clientX - a.clientX)}; };
+  canvas.addEventListener('touchstart', e => { if (e.touches.length === 2) { tp = two(e.touches); anim = null; } else tp = null; }, {passive: false});
+  canvas.addEventListener('touchmove', e => {
+    if (e.touches.length !== 2 || !tp) return;
+    e.preventDefault();
+    const t = two(e.touches), s = getView();
+    dolly(tp.d / Math.max(t.d, 1));
+    const k = s.radius * 0.0021;
+    pan(-(t.x - tp.x) * k, (t.y - tp.y) * k);
+    let dr = t.r - tp.r; dr = Math.atan2(Math.sin(dr), Math.cos(dr));
+    rotate(-dr, 0);
+    tp = t;
+  }, {passive: false});
+  canvas.addEventListener('touchend', e => { if (e.touches.length < 2) tp = null; });
+
   canvas.addEventListener('wheel', e => {
     e.preventDefault();
     let dx = e.deltaX, dy = e.deltaY; if (e.deltaMode === 1) { dx *= 16; dy *= 16; }

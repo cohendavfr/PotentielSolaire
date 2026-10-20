@@ -44,7 +44,6 @@
   .st{font:600 11px/1 system-ui,sans-serif;letter-spacing:.04em;text-transform:uppercase;color:#fff;
       text-shadow:0 0 3px #000,0 0 3px #000,0 1px 4px #000}
   .no{font:700 10px/1 system-ui,sans-serif;color:#10242b;background:rgba(255,255,255,.88);border-radius:4px;padding:2px 4px;box-shadow:0 1px 3px rgba(0,0,0,.4)}
-  @media(max-width:760px){#side{width:calc(100% - 32px);max-height:40%}#hint{display:none}#info{left:16px;right:16px;width:auto;bottom:84px}}
 /* pans de toiture */
 #info{width:400px;bottom:84px;max-height:calc(100% - 200px);overflow:auto}
 table.pans{width:100%;border-collapse:collapse;font-size:12px;margin:8px 0 2px;font-variant-numeric:tabular-nums}
@@ -61,7 +60,6 @@ table.pans tr.sel td{background:rgba(217,130,43,.22)}
 .hintin{font-size:12px;color:var(--mute);border-top:1px solid var(--line);padding-top:8px}
 .hintin b{color:var(--ink)}
 .btn{display:inline-block;margin-top:8px;background:var(--acc);color:#fff;border:0;border-radius:9px;padding:8px 14px;font:600 13px system-ui,sans-serif;cursor:pointer}
-@media(max-width:760px){#info{left:16px;right:16px;width:auto}}
 
 .eco-l{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:12px;margin:5px 0}
 .eco-l input[type=number]{width:96px;padding:4px 6px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink);font:inherit;text-align:right}
@@ -73,3 +71,37 @@ dl.bil dt{color:var(--mute)} dl.bil .tot{color:var(--ink);font-weight:700;border
 #info a{color:var(--acc)}
 
 td.npan{white-space:nowrap;color:var(--mute)} td.npan input{width:46px;padding:2px 4px;border:1px solid var(--line);border-radius:5px;background:var(--bg);color:var(--ink);font:inherit;text-align:right}
+
+/* fiche : poignée et fermeture */
+.ihead{display:flex;justify-content:flex-end;gap:6px;margin:-6px -6px 2px}
+.ibtn{border:1px solid var(--line);background:var(--bg);color:var(--ink);border-radius:8px;min-width:32px;height:28px;font-size:13px;cursor:pointer}
+.peeksum{display:none;margin:2px 0 0;font-size:13px;font-weight:600;color:var(--ink)}
+#menuBtn,#chip{display:none}
+
+/* ------------------------------------------------------------------ smartphone */
+@media(max-width:760px){
+  html,body{font-size:15px}
+  #menuBtn{display:block;position:fixed;left:8px;top:8px;width:46px;height:46px;border-radius:12px;border:1px solid var(--line);background:var(--panel);color:var(--ink);font-size:22px;z-index:12;box-shadow:0 2px 10px rgba(0,0,0,.2)}
+  #chip{display:block;position:fixed;left:62px;right:8px;top:8px;height:46px;line-height:46px;padding:0 14px;border-radius:12px;background:var(--panel);border:1px solid var(--line);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;z-index:9;box-shadow:0 2px 10px rgba(0,0,0,.2)}
+  /* options : feuille repliée par défaut, ouverte par le bouton ☰ */
+  #side{display:none;top:62px;left:8px;right:8px;width:auto;max-height:calc(100% - 140px);z-index:11}
+  body.side-open #side{display:flex}
+  #hint{display:none}
+  .hintin{display:none}
+  /* fiche du bâtiment : feuille en bas, réduite à un résumé tant qu'on ne l'agrandit pas */
+  #info{left:8px;right:8px;width:auto;bottom:62px;max-height:58%;padding:10px 12px;z-index:10}
+  #info.peek > :not(.ihead):not(h2):not(.ad):not(.peeksum){display:none}
+  #info.peek .peeksum{display:block}
+  #info.peek{max-height:none}
+  #info h2{font-size:15px}
+  table.pans{font-size:11px} table.pans td,table.pans th{padding:3px 2px}
+  td.npan input{width:38px}
+  .eco-l{font-size:12px}
+  /* barre de navigation : l'essentiel au pouce */
+  #nav{bottom:8px;left:8px;right:8px;transform:none;justify-content:center;padding:6px;gap:8px;z-index:10}
+  #nav #rl,#nav #rr,#nav #tu,#nav #td,#nav .sep{display:none}
+  #nav button,#mode{min-width:44px;height:44px}
+  #north{width:44px!important;height:44px!important}
+  .pn{width:24px;height:24px;line-height:24px;font-size:12px}
+  .st{font-size:10px}
+}
